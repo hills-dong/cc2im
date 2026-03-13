@@ -4,6 +4,9 @@
   "description": "Claude Code to IM bridge — chat with Claude Code via Lark and Discord",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "cc2im": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

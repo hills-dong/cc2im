@@ -8,11 +8,12 @@ import type { PlatformAdapter, IncomingMessage, Reaction } from "./types.js";
 import { resolve, join } from "path";
 import { mkdtemp, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
+import { execFile } from "child_process";
 
 const CONFIG_PATH = resolve(process.env.CC2IM_CONFIG ?? "config.yaml");
 const DB_PATH = resolve(process.env.CC2IM_DB ?? "cc2im.db");
 
-async function main() {
+export async function main() {
   console.log("cc2im starting...");
 
   let config = loadConfig(CONFIG_PATH);
@@ -63,14 +64,21 @@ async function main() {
   console.log("cc2im ready.");
 
   // Graceful shutdown
-  process.on("SIGINT", async () => {
-    console.log("Shutting down...");
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Shutting down (${signal})...`);
+    sessionManager.abortAll();
     for (const adapter of adapters) {
       await adapter.stop();
     }
     store.close();
     process.exit(0);
-  });
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
 async function handleMessage(
@@ -96,6 +104,11 @@ async function handleMessage(
   let threadId = msg.threadId;
   if (!threadId) {
     threadId = await adapter.createThread(msg.channelId, msg.messageId);
+    // Async: generate a short title via Claude and rename the thread
+    generateThreadTitle(msg.content, config.claude.command).then(
+      (title) => adapter.renameThread(threadId!, title).catch(() => {}),
+      () => {},
+    );
   }
 
   // Get existing session for this thread
@@ -127,8 +140,30 @@ async function handleMessage(
 
   let bufferedText = "";
   let lastFlush = Date.now();
-  const bufferInterval = config.claude.bufferInterval;
+  let currentActivity = "thinking";
+  let lastFlushedText = "";
+  const flushInterval = 3000; // 3 seconds
   const threadKey = `${msg.platform}:${threadId}`;
+
+  const maxLen = formatter.getMaxLength(msg.platform);
+
+  // Build display: buffered text + activity status footer
+  const buildDisplay = (): string => {
+    const footer = `\n\n_⏳ ${currentActivity}..._`;
+    if (bufferedText) {
+      return bufferedText.slice(0, maxLen - footer.length) + footer;
+    }
+    return `_⏳ ${currentActivity}..._`;
+  };
+
+  // Periodic flush timer - updates message every 3s regardless of events
+  const flushTimer = setInterval(async () => {
+    const display = buildDisplay();
+    if (display !== lastFlushedText) {
+      lastFlushedText = display;
+      await adapter.editMessage(threadId!, currentMessageId, display).catch(() => {});
+    }
+  }, flushInterval);
 
   try {
     const result = await sessionManager.invoke(
@@ -137,24 +172,21 @@ async function handleMessage(
       existingSessionId,
       msg.content,
       async (event) => {
-        // Stream handler: buffer and flush text updates
+        // Track current activity from stream events
         if (event.type === "assistant" && "message" in event) {
           const content = (event as any).message?.content;
           if (content) {
             for (const block of content) {
               if (block.type === "text" && block.text) {
                 bufferedText += block.text;
+                currentActivity = "writing";
+              } else if (block.type === "tool_use") {
+                currentActivity = `running ${block.name ?? "tool"}`;
               }
             }
           }
-
-          // Flush buffer periodically
-          const now = Date.now();
-          if (now - lastFlush >= bufferInterval && bufferedText) {
-            const display = bufferedText.slice(0, formatter.getMaxLength(msg.platform));
-            await adapter.editMessage(threadId!, currentMessageId, display).catch(() => {});
-            lastFlush = now;
-          }
+        } else if (event.type === "result") {
+          currentActivity = "finishing";
         }
       },
       imagePaths.length > 0 ? imagePaths : undefined,
@@ -199,7 +231,8 @@ async function handleMessage(
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    await adapter.editMessage(threadId!, currentMessageId, `❌ Error: ${errorMsg}`);
+    const displayMsg = formatUserError(err);
+    await adapter.editMessage(threadId!, currentMessageId, displayMsg);
 
     // If resume failed, clear session and notify
     if (errorMsg.includes("resume") || errorMsg.includes("session")) {
@@ -207,6 +240,7 @@ async function handleMessage(
       await adapter.sendMessage(msg.channelId, threadId, "⚠️ Session reset. Please send your message again.");
     }
   } finally {
+    clearInterval(flushTimer);
     // Clean up temp image files
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -311,7 +345,42 @@ async function handleManagementCommand(
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+function formatUserError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code = (err as NodeJS.ErrnoException)?.code;
+
+  if (code === "ENOENT" || msg.includes("ENOENT")) {
+    return "❌ Claude Code is not installed or not found in PATH. Please install it first: https://docs.anthropic.com/en/docs/claude-code";
+  }
+  if (code === "EACCES" || msg.includes("EACCES")) {
+    return "❌ Permission denied when running Claude Code. Please check file permissions.";
+  }
+  if (/auth|login|log in|API key|unauthorized|not logged in|account/i.test(msg)) {
+    return "❌ Claude Code is not logged in. Please run `claude login` to authenticate.";
+  }
+  if (msg.includes("timed out")) {
+    return `❌ Claude Code timed out. Please try again with a simpler request.`;
+  }
+  return `❌ Error: ${msg}`;
+}
+
+function generateThreadTitle(userMessage: string, claudeCommand: string): Promise<string> {
+  const prompt = `根据以下用户消息，生成一个15字以内的简短中文标题，只输出标题本身，不要引号或其他内容：\n\n${userMessage}`;
+  return new Promise((resolve, reject) => {
+    execFile(claudeCommand, ["-p", prompt, "--model", "haiku"], { timeout: 15000 }, (err, stdout) => {
+      if (err) return reject(err);
+      const title = stdout.trim().slice(0, 15);
+      resolve(title || userMessage.slice(0, 15) || "New conversation");
+    });
+  });
+}
+
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith("/index.js") || process.argv[1].endsWith("/index.ts")
+);
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}
