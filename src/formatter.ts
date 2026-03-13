@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from "fs";
+import { basename, extname } from "path";
 import type { Attachment, FormatterConfig, Platform } from "./types.js";
 
 interface FormatResult {
@@ -100,5 +102,40 @@ export class Formatter {
 
     const cleanText = lines.slice(0, lastContentLine).join("\n").trimEnd();
     return { cleanText, reactions };
+  }
+
+  /** Extract image file paths from text and return them as attachments */
+  extractImages(text: string, projectDir: string): Attachment[] {
+    const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
+    const attachments: Attachment[] = [];
+    const seen = new Set<string>();
+
+    // Match absolute paths or relative paths that look like image files
+    const pathPattern = /(?:^|\s|`)((?:\/[\w./-]+|[\w./-]+)\.(?:png|jpg|jpeg|gif|webp|bmp|svg))\b/gi;
+    let match;
+    while ((match = pathPattern.exec(text)) !== null) {
+      let filePath = match[1];
+      // Resolve relative paths against project dir
+      if (!filePath.startsWith("/")) {
+        filePath = `${projectDir}/${filePath}`;
+      }
+      if (seen.has(filePath)) continue;
+      seen.add(filePath);
+
+      if (existsSync(filePath)) {
+        const ext = extname(filePath).toLowerCase();
+        if (imageExts.has(ext)) {
+          try {
+            const content = readFileSync(filePath);
+            attachments.push({
+              filename: basename(filePath),
+              content,
+              mimeType: `image/${ext.slice(1) === "jpg" ? "jpeg" : ext.slice(1)}`,
+            });
+          } catch {}
+        }
+      }
+    }
+    return attachments;
   }
 }

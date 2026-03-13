@@ -5,7 +5,9 @@ import { Formatter } from "./formatter.js";
 import { Router } from "./router.js";
 import { DiscordAdapter } from "./adapters/discord.js";
 import type { PlatformAdapter, IncomingMessage, Reaction } from "./types.js";
-import { resolve } from "path";
+import { resolve, join } from "path";
+import { mkdtemp, writeFile, rm } from "fs/promises";
+import { tmpdir } from "os";
 
 const CONFIG_PATH = resolve(process.env.CC2IM_CONFIG ?? "config.yaml");
 const DB_PATH = resolve(process.env.CC2IM_DB ?? "cc2im.db");
@@ -103,6 +105,26 @@ async function handleMessage(
   const currentMessageId = await adapter.sendMessage(msg.channelId, threadId, "⏳ _Thinking..._");
   store.saveMessage(currentMessageId, msg.platform, threadId, true, "thinking...");
 
+  // Save image attachments to temp files for Claude Code
+  const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
+  const imageMimeTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/svg+xml"]);
+  let tempDir: string | null = null;
+  const imagePaths: string[] = [];
+
+  const imageAttachments = msg.attachments.filter(a =>
+    (a.mimeType && imageMimeTypes.has(a.mimeType)) ||
+    imageExts.has(a.filename.slice(a.filename.lastIndexOf(".")).toLowerCase())
+  );
+
+  if (imageAttachments.length > 0) {
+    tempDir = await mkdtemp(join(tmpdir(), "cc2im-"));
+    for (const att of imageAttachments) {
+      const filePath = join(tempDir, att.filename);
+      await writeFile(filePath, att.content);
+      imagePaths.push(filePath);
+    }
+  }
+
   let bufferedText = "";
   let lastFlush = Date.now();
   const bufferInterval = config.claude.bufferInterval;
@@ -135,6 +157,7 @@ async function handleMessage(
           }
         }
       },
+      imagePaths.length > 0 ? imagePaths : undefined,
     );
 
     // Save session mapping
@@ -155,9 +178,15 @@ async function handleMessage(
       store.saveMessage(extraId, msg.platform, threadId, true, formatted.messages[i].slice(0, 100));
     }
 
-    // Upload attachments
+    // Upload text attachments (long output)
     for (const attachment of formatted.attachments) {
       await adapter.uploadFile(msg.channelId, threadId, attachment.filename, attachment.content);
+    }
+
+    // Detect and send image files referenced in output
+    const imageAttachmentsOut = formatter.extractImages(cleanText, project.directory);
+    for (const img of imageAttachmentsOut) {
+      await adapter.uploadFile(msg.channelId, threadId, img.filename, img.content);
     }
 
     // Add reactions
@@ -176,6 +205,11 @@ async function handleMessage(
     if (errorMsg.includes("resume") || errorMsg.includes("session")) {
       store.deleteThread(threadId, msg.platform);
       await adapter.sendMessage(msg.channelId, threadId, "⚠️ Session reset. Please send your message again.");
+    }
+  } finally {
+    // Clean up temp image files
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 }

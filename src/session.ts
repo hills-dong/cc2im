@@ -41,6 +41,7 @@ export class SessionManager {
     sessionId: string | null,
     message: string,
     onEvent: StreamCallback,
+    images?: string[],
   ): Promise<SessionResult> {
     // Queue if a process is already running for this thread
     if (this.queues.has(threadKey)) {
@@ -60,7 +61,13 @@ export class SessionManager {
     if (sessionId) {
       args.push("--resume", sessionId);
     }
-    args.push("-p", message);
+    // Build prompt: append image file paths so Claude Code can read them
+    let fullMessage = message;
+    if (images && images.length > 0) {
+      const imageList = images.map(p => `- ${p}`).join("\n");
+      fullMessage += `\n\n[User attached ${images.length} image(s). Read them with the Read tool:\n${imageList}\n]`;
+    }
+    args.push("-p", fullMessage);
 
     return new Promise<SessionResult>((resolve, reject) => {
       let timedOut = false;
