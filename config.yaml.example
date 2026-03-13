@@ -1,0 +1,28 @@
+# Platform credentials (prefer env vars: DISCORD_TOKEN, LARK_APP_ID, LARK_APP_SECRET)
+lark:
+  appId: ""
+  appSecret: ""
+
+discord:
+  token: ""
+
+# Project → directory mappings
+projects:
+  - name: "my-project"
+    directory: "/path/to/project"
+    platforms:
+      discord: true
+
+# Claude Code CLI settings
+claude:
+  command: "claude"
+  defaultArgs: ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"]
+  bufferInterval: 500
+  timeout: 300000
+
+# Output formatting
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+  maxConcurrentProcesses: 5
