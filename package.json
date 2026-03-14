@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w packages/core -w packages/server -w packages/cli -w packages/ui --if-present",
     "test": "npm run test --workspaces --if-present",
     "dev": "npm run dev --workspace=packages/cli"
   }
