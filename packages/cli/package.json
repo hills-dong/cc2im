@@ -1,0 +1,25 @@
+{
+  "name": "cc2im",
+  "version": "0.1.0",
+  "description": "Claude Code to IM bridge — chat with Claude Code via Lark and Discord",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cc2im": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cc2im/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

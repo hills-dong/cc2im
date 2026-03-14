@@ -1,10 +1,9 @@
-import { loadConfig, saveConfig, addProject, removeProject } from "./config.js";
-import { Store, THREAD_STATUS_ICONS, type ThreadStatus } from "./store.js";
-import { SessionManager } from "./session.js";
-import { Formatter } from "./formatter.js";
-import { Router } from "./router.js";
-import { DiscordAdapter } from "./adapters/discord.js";
-import type { PlatformAdapter, IncomingMessage, Reaction } from "./types.js";
+import {
+  loadConfig, saveConfig, addProject, removeProject,
+  Store, THREAD_STATUS_ICONS, type ThreadStatus,
+  SessionManager, Formatter, Router, DiscordAdapter,
+  type PlatformAdapter, type IncomingMessage, type Reaction,
+} from "@cc2im/core";
 import type { ChatInputCommandInteraction } from "discord.js";
 import { resolve, join } from "path";
 import { mkdtemp, writeFile, rm } from "fs/promises";
