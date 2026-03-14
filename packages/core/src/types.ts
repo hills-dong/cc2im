@@ -1,4 +1,4 @@
-export type Platform = "lark" | "discord";
+export type Platform = "lark" | "discord" | "web";
 
 export interface Attachment {
   filename: string;
