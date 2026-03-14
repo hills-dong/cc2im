@@ -167,16 +167,22 @@ async function handleMessage(
   let threadId = msg.threadId;
   if (!threadId) {
     threadId = await adapter.createThread(msg.channelId, msg.messageId);
-    // Async: generate a short title via Claude and rename the thread with status icon
+    // Immediately rename with truncated user message as fallback title
+    const fallbackTitle = msg.content.replace(/\n/g, " ").slice(0, 30) || "New conversation";
+    const tid = threadId;
+    adapter.renameThread(tid, `${THREAD_STATUS_ICONS.active} ${fallbackTitle}`).catch((err) => {
+      console.error(`[thread-title] Failed to set fallback title:`, err);
+    });
+    // Then async try to generate a better title via Claude
     generateThreadTitle(msg.content, config.claude.command).then(
       (title) => {
-        console.log(`[thread-title] Generated title: "${title}" for thread ${threadId}`);
-        adapter.renameThread(threadId!, `${THREAD_STATUS_ICONS.active} ${title}`).catch((err) => {
-          console.error(`[thread-title] Failed to rename thread ${threadId}:`, err);
+        console.log(`[thread-title] Generated title: "${title}" for thread ${tid}`);
+        adapter.renameThread(tid, `${THREAD_STATUS_ICONS.active} ${title}`).catch((err) => {
+          console.error(`[thread-title] Failed to set model title for thread ${tid}:`, err);
         });
       },
       (err) => {
-        console.error(`[thread-title] Failed to generate title:`, err);
+        console.error(`[thread-title] Claude title generation failed (fallback already applied):`, err);
       },
     );
   }
@@ -590,8 +596,8 @@ async function getThreadName(adapter: PlatformAdapter, threadId: string): Promis
 export function generateThreadTitle(userMessage: string, claudeCommand: string): Promise<string> {
   const prompt = `根据以下用户消息，生成一个15字以内的简短中文标题，只输出标题本身，不要引号或其他内容：\n\n${userMessage}`;
   return new Promise((resolve, reject) => {
-    execFile(claudeCommand, ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--model", "haiku", "-p", prompt], {
-      timeout: 15000,
+    execFile(claudeCommand, ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--model", "haiku", "--max-turns", "1", "-p", prompt], {
+      timeout: 60000,
       maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env, CLAUDECODE: undefined },
     }, (err, stdout) => {

@@ -108,18 +108,27 @@ export class SessionManager {
       let stderrText = "";
       let success = false;
 
-      const timeout = setTimeout(() => {
+      const resetTimeout = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          timedOut = true;
+          proc.kill("SIGTERM");
+        }, this.claudeConfig.timeout);
+      };
+      let idleTimer = setTimeout(() => {
         timedOut = true;
         proc.kill("SIGTERM");
       }, this.claudeConfig.timeout);
 
       proc.stderr!.on("data", (chunk: Buffer) => {
         stderrText += chunk.toString();
+        resetTimeout();
       });
 
       const rl = createInterface({ input: proc.stdout! });
 
       rl.on("line", (line) => {
+        resetTimeout();
         const event = this.parseLine(line);
         if (!event) return;
 
@@ -149,7 +158,7 @@ export class SessionManager {
       });
 
       proc.on("close", (code) => {
-        clearTimeout(timeout);
+        clearTimeout(idleTimer);
         this.active.delete(threadKey);
 
         const queue = this.queues.get(threadKey);
@@ -174,7 +183,7 @@ export class SessionManager {
       });
 
       proc.on("error", (err) => {
-        clearTimeout(timeout);
+        clearTimeout(idleTimer);
         this.active.delete(threadKey);
         this.queues.delete(threadKey);
         reject(err);

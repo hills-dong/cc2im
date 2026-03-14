@@ -67,6 +67,8 @@ describe("generateThreadTitle", () => {
     expect(args[args.indexOf("--output-format") + 1]).toBe("stream-json");
     expect(args).toContain("--verbose");
     expect(args).toContain("--dangerously-skip-permissions");
+    expect(args).toContain("--max-turns");
+    expect(args[args.indexOf("--max-turns") + 1]).toBe("1");
     expect(args).toContain("-p");
   });
 });
