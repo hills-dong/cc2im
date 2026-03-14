@@ -11,6 +11,7 @@ Usage:
   cc2im restart                     Restart the service
   cc2im status                      Show service status
   cc2im logs                        Tail service logs
+  cc2im web [--port N] [--bind H]   Start web UI server
   cc2im run                         Run in foreground (default)
 `;
 
@@ -41,6 +42,29 @@ switch (command) {
   case "logs":
     logs();
     break;
+  case "web": {
+    const portIdx = process.argv.indexOf("--port");
+    const port = portIdx !== -1 ? parseInt(process.argv[portIdx + 1], 10) : 8080;
+    const bindIdx = process.argv.indexOf("--bind");
+    const bind = bindIdx !== -1 ? process.argv[bindIdx + 1] : "0.0.0.0";
+    const configIdx = process.argv.indexOf("--config");
+    const configPath = configIdx !== -1 ? process.argv[configIdx + 1] : undefined;
+    const { resolve } = await import("path");
+    const { resolveConfigPath } = await import("./service.js");
+    const { createServer } = await import("@cc2im/server");
+
+    const resolvedConfig = resolveConfigPath(configPath);
+    const dbPath = resolve(process.env.CC2IM_DB ?? "cc2im.db");
+
+    await createServer({
+      port,
+      bind,
+      configPath: resolvedConfig,
+      dbPath,
+    });
+    console.log(`cc2im web UI available at http://${bind}:${port}`);
+    break;
+  }
   case "run": {
     const { main } = await import("./index.js");
     main().catch((err: Error) => {
