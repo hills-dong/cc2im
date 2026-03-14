@@ -1,10 +1,11 @@
 import { loadConfig, saveConfig, addProject, removeProject } from "./config.js";
-import { Store } from "./store.js";
+import { Store, THREAD_STATUS_ICONS, type ThreadStatus } from "./store.js";
 import { SessionManager } from "./session.js";
 import { Formatter } from "./formatter.js";
 import { Router } from "./router.js";
 import { DiscordAdapter } from "./adapters/discord.js";
 import type { PlatformAdapter, IncomingMessage, Reaction } from "./types.js";
+import type { ChatInputCommandInteraction } from "discord.js";
 import { resolve, join } from "path";
 import { mkdtemp, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
@@ -59,9 +60,61 @@ export async function main() {
         console.error("Error handling reaction:", err);
       }
     });
+
+    // Handle slash commands (Discord only)
+    if (adapter instanceof DiscordAdapter) {
+      adapter.onSlashCommand(async (interaction) => {
+        try {
+          await handleSlashCommand(interaction, adapter, router, store, config);
+        } catch (err) {
+          console.error("Error handling slash command:", err);
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err instanceof Error ? err.message : String(err)}`, flags: 64 }).catch(() => {});
+          }
+        }
+      });
+    }
   }
 
   console.log("cc2im ready.");
+
+  // Process pending restarts from previous shutdown
+  const pendingRestarts = store.getPendingRestarts();
+  if (pendingRestarts.length > 0) {
+    console.log(`Recovering ${pendingRestarts.length} pending restart(s)...`);
+    store.clearPendingRestarts();
+
+    for (const thread of pendingRestarts) {
+      const adapter = adapters.find(a => a.platform === thread.platform);
+      const project = config.projects.find(p => p.name === thread.project_name);
+      if (!adapter || !project) continue;
+
+      const threadKey = `${thread.platform}:${thread.thread_id}`;
+      console.log(`Resuming session ${thread.session_id} in thread ${thread.thread_id}...`);
+
+      // Resume session in background — don't block startup
+      sessionManager.invoke(
+        threadKey,
+        project.directory,
+        thread.session_id,
+        "cc2im 服务已重启完成，请简短告知用户重启成功并继续之前的工作。",
+        () => {},
+        undefined,
+        undefined,
+        project.model,
+      ).then(async (result) => {
+        store.upsertThread(thread.thread_id, thread.platform as any, thread.channel_id, result.sessionId, thread.project_name);
+        const { cleanText } = formatter.extractReactions(result.text);
+        const formatted = formatter.formatOutput(cleanText, thread.platform as any);
+        for (const msg of formatted.messages) {
+          await adapter.sendMessage(thread.channel_id, thread.thread_id, msg);
+        }
+        console.log(`Resumed thread ${thread.thread_id} successfully.`);
+      }).catch((err) => {
+        console.error(`Failed to resume thread ${thread.thread_id}:`, err);
+      });
+    }
+  }
 
   // Graceful shutdown
   let shuttingDown = false;
@@ -69,6 +122,16 @@ export async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`Shutting down (${signal})...`);
+
+    // Save active threads for post-restart recovery
+    for (const threadKey of sessionManager.activeKeys()) {
+      const [platform, threadId] = threadKey.split(":", 2);
+      if (platform && threadId) {
+        store.markPendingRestart(threadId, platform as any);
+        console.log(`Marked pending restart: ${threadKey}`);
+      }
+    }
+
     sessionManager.abortAll();
     for (const adapter of adapters) {
       await adapter.stop();
@@ -92,7 +155,7 @@ async function handleMessage(
 ) {
   // Check for management commands
   if (router.isManagementCommand(msg.content)) {
-    await handleManagementCommand(msg, adapter, router, config);
+    await handleManagementCommand(msg, adapter, router, store, config);
     return;
   }
 
@@ -104,19 +167,29 @@ async function handleMessage(
   let threadId = msg.threadId;
   if (!threadId) {
     threadId = await adapter.createThread(msg.channelId, msg.messageId);
-    // Async: generate a short title via Claude and rename the thread
+    // Async: generate a short title via Claude and rename the thread with status icon
     generateThreadTitle(msg.content, config.claude.command).then(
-      (title) => adapter.renameThread(threadId!, title).catch(() => {}),
-      () => {},
+      (title) => {
+        console.log(`[thread-title] Generated title: "${title}" for thread ${threadId}`);
+        adapter.renameThread(threadId!, `${THREAD_STATUS_ICONS.active} ${title}`).catch((err) => {
+          console.error(`[thread-title] Failed to rename thread ${threadId}:`, err);
+        });
+      },
+      (err) => {
+        console.error(`[thread-title] Failed to generate title:`, err);
+      },
     );
   }
 
   // Get existing session for this thread
   const existingSessionId = router.getSessionId(threadId, msg.platform);
 
-  // Send initial "thinking" indicator
-  const currentMessageId = await adapter.sendMessage(msg.channelId, threadId, "⏳ _Thinking..._");
-  store.saveMessage(currentMessageId, msg.platform, threadId, true, "thinking...");
+  // Send initial indicator: "queued" if thread is busy, "thinking" otherwise
+  const threadKey = `${msg.platform}:${threadId}`;
+  const isBusy = sessionManager.isBusy(threadKey);
+  const initialText = isBusy ? "⏳ _请稍等，有任务正在执行中..._" : "⏳ _Thinking..._";
+  const currentMessageId = await adapter.sendMessage(msg.channelId, threadId, initialText);
+  store.saveMessage(currentMessageId, msg.platform, threadId, true, isBusy ? "queued" : "thinking...");
 
   // Save image attachments to temp files for Claude Code
   const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
@@ -139,29 +212,48 @@ async function handleMessage(
   }
 
   let bufferedText = "";
-  let lastFlush = Date.now();
-  let currentActivity = "thinking";
-  let lastFlushedText = "";
+  const activities: string[] = []; // recent activity log
   const flushInterval = 3000; // 3 seconds
-  const threadKey = `${msg.platform}:${threadId}`;
+  const startTime = Date.now();
 
   const maxLen = formatter.getMaxLength(msg.platform);
 
-  // Build display: buffered text + activity status footer
-  const buildDisplay = (): string => {
-    const footer = `\n\n_⏳ ${currentActivity}..._`;
-    if (bufferedText) {
-      return bufferedText.slice(0, maxLen - footer.length) + footer;
-    }
-    return `_⏳ ${currentActivity}..._`;
+  const pushActivity = (text: string) => {
+    activities.push(text);
+    if (activities.length > 5) activities.shift();
   };
 
-  // Periodic flush timer - updates message every 3s regardless of events
+  const formatElapsed = (): string => {
+    const sec = Math.floor((Date.now() - startTime) / 1000);
+    return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m${sec % 60}s`;
+  };
+
+  // Build display: buffered text + activity log footer with elapsed time
+  const buildDisplay = (): string => {
+    const elapsed = formatElapsed();
+    const lastActivity = activities.length > 0
+      ? activities[activities.length - 1]
+      : "thinking";
+    const statusLine = `_⏳ [${elapsed}] ${lastActivity}..._`;
+    const activityLog = activities.length > 1
+      ? "\n\n---\n" + activities.slice(-5).map(a => `_• ${a}_`).join("\n") + `\n${statusLine}`
+      : `\n\n${statusLine}`;
+    if (bufferedText) {
+      const maxText = maxLen - activityLog.length;
+      return bufferedText.slice(0, maxText) + activityLog;
+    }
+    return statusLine;
+  };
+
+  // Periodic flush timer - updates message every 3s with elapsed time
+  console.log(`[stream] Timer started for thread ${threadId}, messageId ${currentMessageId}`);
   const flushTimer = setInterval(async () => {
     const display = buildDisplay();
-    if (display !== lastFlushedText) {
-      lastFlushedText = display;
-      await adapter.editMessage(threadId!, currentMessageId, display).catch(() => {});
+    console.log(`[stream] Tick ${formatElapsed()} | activities=${activities.length} | text=${bufferedText.length}c`);
+    try {
+      await adapter.editMessage(threadId!, currentMessageId, display);
+    } catch (err) {
+      console.error(`[stream] editMessage failed:`, err);
     }
   }, flushInterval);
 
@@ -171,25 +263,40 @@ async function handleMessage(
       project.directory,
       existingSessionId,
       msg.content,
-      async (event) => {
+      (event) => {
         // Track current activity from stream events
+        const evt = event as any;
+        const blockTypes = evt.message?.content?.map((b: any) => b.type)?.join(",") ?? "n/a";
+        console.log(`[stream] Event: type=${event.type}, blocks=[${blockTypes}]`);
         if (event.type === "assistant" && "message" in event) {
-          const content = (event as any).message?.content;
+          const content = evt.message?.content;
           if (content) {
             for (const block of content) {
               if (block.type === "text" && block.text) {
                 bufferedText += block.text;
-                currentActivity = "writing";
               } else if (block.type === "tool_use") {
-                currentActivity = `running ${block.name ?? "tool"}`;
+                const name = block.name ?? "tool";
+                const input = block.input;
+                let detail = name;
+                // Show relevant tool input details
+                if (input) {
+                  if (input.file_path) detail = `${name}: ${input.file_path}`;
+                  else if (input.command) detail = `${name}: \`${String(input.command).slice(0, 60)}\``;
+                  else if (input.pattern) detail = `${name}: ${input.pattern}`;
+                  else if (input.query) detail = `${name}: ${String(input.query).slice(0, 60)}`;
+                }
+                pushActivity(detail);
               }
             }
           }
-        } else if (event.type === "result") {
-          currentActivity = "finishing";
         }
       },
       imagePaths.length > 0 ? imagePaths : undefined,
+      // When task starts processing (exits queue), update message to "Thinking"
+      () => {
+        adapter.editMessage(threadId!, currentMessageId, "⏳ _Thinking..._").catch(() => {});
+      },
+      project.model,
     );
 
     // Save session mapping
@@ -289,10 +396,87 @@ async function handleReaction(
   );
 }
 
+async function handleSlashCommand(
+  interaction: ChatInputCommandInteraction,
+  adapter: DiscordAdapter,
+  router: Router,
+  store: Store,
+  config: ReturnType<typeof loadConfig>,
+) {
+  const command = interaction.commandName.replace("im-", "");
+  const channel = interaction.channel;
+  const isThread = channel?.isThread() ?? false;
+  const channelId = isThread ? (channel as any).parentId! as string : interaction.channelId;
+  const threadId = isThread ? interaction.channelId : interaction.channelId;
+
+  switch (command) {
+    case "done":
+    case "reopen": {
+      if (!isThread) {
+        await interaction.reply({ content: "⚠️ 请在 thread 中使用此命令", flags: 64 });
+        return;
+      }
+      const newStatus: ThreadStatus = command === "done" ? "done" : "active";
+      const thread = store.getThread(threadId, "discord");
+      if (!thread) {
+        await interaction.reply({ content: "⚠️ 未找到此 thread 的记录", flags: 64 });
+        return;
+      }
+      store.updateThreadStatus(threadId, "discord", newStatus);
+      await interaction.reply(newStatus === "done" ? "✅ 已标记为完成" : "🔄 已重新打开");
+      // Rename thread async — may be rate-limited by Discord
+      const icon = THREAD_STATUS_ICONS[newStatus];
+      adapter.getThreadName(threadId).then(currentName => {
+        const cleanName = stripStatusIcon(currentName);
+        adapter.renameThread(threadId, `${icon} ${cleanName}`).catch(() => {});
+      }).catch(() => {});
+      break;
+    }
+
+    case "list-projects": {
+      const list = config.projects.map(p =>
+        `• **${p.name}** → \`${p.directory}\` (${Object.entries(p.platforms).filter(([, v]) => v).map(([k]) => k).join(", ")})`
+      ).join("\n");
+      await interaction.reply(list || "_No projects configured_");
+      break;
+    }
+
+    case "add-project": {
+      const name = interaction.options.getString("name", true);
+      const directory = interaction.options.getString("directory", true);
+      const project = { name, directory, platforms: { discord: true } as Partial<Record<"lark" | "discord", boolean>> };
+      addProject(config, project);
+      saveConfig(CONFIG_PATH, config);
+      const channelInfo = await adapter.setupProject(project);
+      router.registerChannel(channelInfo.channelId, "discord", name);
+      await interaction.reply(`✅ Project **${name}** added → \`${directory}\``);
+      break;
+    }
+
+    case "remove-project": {
+      const name = interaction.options.getString("name", true);
+      removeProject(config, name);
+      saveConfig(CONFIG_PATH, config);
+      await interaction.reply(`✅ Project **${name}** removed`);
+      break;
+    }
+
+    case "reload-config": {
+      Object.assign(config, loadConfig(CONFIG_PATH));
+      await interaction.reply("✅ Config reloaded");
+      break;
+    }
+
+    default:
+      await interaction.reply({ content: `未知命令: ${interaction.commandName}`, flags: 64 });
+  }
+}
+
 async function handleManagementCommand(
   msg: IncomingMessage,
   adapter: PlatformAdapter,
   router: Router,
+  store: Store,
   config: ReturnType<typeof loadConfig>,
 ) {
   const parsed = router.parseManagementCommand(msg.content);
@@ -342,6 +526,31 @@ async function handleManagementCommand(
       await adapter.sendMessage(msg.channelId, threadId, "✅ Config reloaded");
       break;
     }
+
+    case "done":
+    case "reopen": {
+      if (!msg.threadId) {
+        await adapter.sendMessage(msg.channelId, threadId, "⚠️ 请在 thread 中使用此命令");
+        return;
+      }
+      const newStatus: ThreadStatus = parsed.command === "done" ? "done" : "active";
+      const thread = store.getThread(msg.threadId, msg.platform);
+      if (!thread) {
+        await adapter.sendMessage(msg.channelId, threadId, "⚠️ 未找到此 thread 的记录");
+        return;
+      }
+      store.updateThreadStatus(msg.threadId, msg.platform, newStatus);
+      await adapter.sendMessage(msg.channelId, threadId,
+        newStatus === "done" ? "✅ 已标记为完成" : "🔄 已重新打开"
+      );
+      // Rename thread async — may be rate-limited by Discord
+      const icon = THREAD_STATUS_ICONS[newStatus];
+      getThreadName(adapter, msg.threadId).then(currentName => {
+        const cleanName = stripStatusIcon(currentName);
+        adapter.renameThread(msg.threadId!, `${icon} ${cleanName}`).catch(() => {});
+      }).catch(() => {});
+      break;
+    }
   }
 }
 
@@ -364,12 +573,40 @@ function formatUserError(err: unknown): string {
   return `❌ Error: ${msg}`;
 }
 
-function generateThreadTitle(userMessage: string, claudeCommand: string): Promise<string> {
+function stripStatusIcon(name: string): string {
+  // Remove known status icon prefixes
+  return name.replace(/^[🔄✅]\s*/, "");
+}
+
+async function getThreadName(adapter: PlatformAdapter, threadId: string): Promise<string> {
+  // Try to get the thread name via the adapter; fall back to empty
+  try {
+    return await adapter.getThreadName(threadId);
+  } catch {
+    return "";
+  }
+}
+
+export function generateThreadTitle(userMessage: string, claudeCommand: string): Promise<string> {
   const prompt = `根据以下用户消息，生成一个15字以内的简短中文标题，只输出标题本身，不要引号或其他内容：\n\n${userMessage}`;
   return new Promise((resolve, reject) => {
-    execFile(claudeCommand, ["-p", prompt, "--model", "haiku"], { timeout: 15000 }, (err, stdout) => {
+    execFile(claudeCommand, ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--model", "haiku", "-p", prompt], {
+      timeout: 15000,
+      env: { ...process.env, CLAUDECODE: undefined },
+    }, (err, stdout) => {
       if (err) return reject(err);
-      const title = stdout.trim().slice(0, 15);
+      // Parse stream-json NDJSON output to extract result text
+      let title = "";
+      for (const line of stdout.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line) as any;
+          if (event.type === "result" && event.result) {
+            title = String(event.result).trim().slice(0, 15);
+            break;
+          }
+        } catch {}
+      }
       resolve(title || userMessage.slice(0, 15) || "New conversation");
     });
   });
