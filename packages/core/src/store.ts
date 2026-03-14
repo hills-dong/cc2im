@@ -27,6 +27,18 @@ export interface MessageRow {
   created_at: string;
 }
 
+export interface TokenStats {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+export interface DailyTokenStats extends TokenStats {
+  date: string;
+  model: string | null;
+}
+
 export class Store {
   private db: Database.Database;
 
@@ -64,6 +76,18 @@ export class Store {
         platform TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (thread_id, platform)
+      );
+
+      CREATE TABLE IF NOT EXISTS token_usage (
+        id INTEGER PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        project_name TEXT NOT NULL,
+        model TEXT,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        cache_read_tokens INTEGER DEFAULT 0,
+        cache_creation_tokens INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -134,6 +158,57 @@ export class Store {
 
   clearPendingRestarts(): void {
     this.db.prepare("DELETE FROM pending_restarts").run();
+  }
+
+  saveTokenUsage(
+    sessionId: string, projectName: string, model: string | null,
+    inputTokens: number, outputTokens: number,
+    cacheReadTokens: number, cacheCreationTokens: number,
+  ): void {
+    this.db.prepare(`
+      INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(sessionId, projectName, model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens);
+  }
+
+  getSessionTokens(sessionId: string): TokenStats {
+    const row = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0) as inputTokens,
+        COALESCE(SUM(output_tokens), 0) as outputTokens,
+        COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+        COALESCE(SUM(cache_creation_tokens), 0) as cacheCreationTokens
+      FROM token_usage WHERE session_id = ?
+    `).get(sessionId) as TokenStats;
+    return row;
+  }
+
+  getProjectTokens(projectName: string): TokenStats {
+    const row = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0) as inputTokens,
+        COALESCE(SUM(output_tokens), 0) as outputTokens,
+        COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+        COALESCE(SUM(cache_creation_tokens), 0) as cacheCreationTokens
+      FROM token_usage WHERE project_name = ?
+    `).get(projectName) as TokenStats;
+    return row;
+  }
+
+  getDailyTokens(projectName: string): DailyTokenStats[] {
+    return this.db.prepare(`
+      SELECT
+        DATE(created_at) as date,
+        model,
+        COALESCE(SUM(input_tokens), 0) as inputTokens,
+        COALESCE(SUM(output_tokens), 0) as outputTokens,
+        COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
+        COALESCE(SUM(cache_creation_tokens), 0) as cacheCreationTokens
+      FROM token_usage
+      WHERE project_name = ?
+      GROUP BY DATE(created_at), model
+      ORDER BY date DESC
+    `).all(projectName) as DailyTokenStats[];
   }
 
   close(): void {
