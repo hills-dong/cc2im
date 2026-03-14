@@ -27,12 +27,33 @@ export class SessionManager {
     return this.active.size < this.formatterConfig.maxConcurrentProcesses;
   }
 
+  isBusy(threadKey: string): boolean {
+    return this.queues.has(threadKey);
+  }
+
+  activeKeys(): string[] {
+    return [...this.active.keys()];
+  }
+
   parseLine(line: string): StreamEvent | null {
     try {
       return JSON.parse(line) as StreamEvent;
     } catch {
       return null;
     }
+  }
+
+  buildArgs(sessionId: string | null, model?: string): string[] {
+    const args = [...this.claudeConfig.defaultArgs];
+    if (model) {
+      const idx = args.indexOf("--model");
+      if (idx !== -1) args.splice(idx, 2);
+      args.push("--model", model);
+    }
+    if (sessionId) {
+      args.push("--resume", sessionId);
+    }
+    return args;
   }
 
   async invoke(
@@ -42,6 +63,8 @@ export class SessionManager {
     message: string,
     onEvent: StreamCallback,
     images?: string[],
+    onStart?: () => void,
+    model?: string,
   ): Promise<SessionResult> {
     // Queue if a process is already running for this thread
     if (this.queues.has(threadKey)) {
@@ -57,10 +80,10 @@ export class SessionManager {
       await new Promise(r => setTimeout(r, 500));
     }
 
-    const args = [...this.claudeConfig.defaultArgs];
-    if (sessionId) {
-      args.push("--resume", sessionId);
-    }
+    // Notify caller that actual processing is starting
+    onStart?.();
+
+    const args = this.buildArgs(sessionId, model);
     // Build prompt: append image file paths so Claude Code can read them
     let fullMessage = message;
     if (images && images.length > 0) {
@@ -82,12 +105,17 @@ export class SessionManager {
 
       let resultSessionId = sessionId ?? "";
       let fullText = "";
+      let stderrText = "";
       let success = false;
 
       const timeout = setTimeout(() => {
         timedOut = true;
         proc.kill("SIGTERM");
       }, this.claudeConfig.timeout);
+
+      proc.stderr!.on("data", (chunk: Buffer) => {
+        stderrText += chunk.toString();
+      });
 
       const rl = createInterface({ input: proc.stdout! });
 
@@ -134,6 +162,8 @@ export class SessionManager {
 
         if (timedOut) {
           reject(new Error(`Claude Code timed out after ${this.claudeConfig.timeout}ms`));
+        } else if (code !== 0 && !fullText) {
+          reject(new Error(stderrText.trim() || `Claude Code exited with code ${code}`));
         } else {
           resolve({
             sessionId: resultSessionId,
@@ -160,5 +190,14 @@ export class SessionManager {
       }
     }
     return false;
+  }
+
+  abortAll(): void {
+    for (const [key, proc] of this.active) {
+      console.log(`Killing claude process for ${key} (PID ${proc.pid})...`);
+      proc.kill("SIGTERM");
+    }
+    this.active.clear();
+    this.queues.clear();
   }
 }

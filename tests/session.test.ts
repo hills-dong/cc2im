@@ -55,4 +55,41 @@ describe("SessionManager", () => {
     const event = manager.parseLine("not json");
     expect(event).toBeNull();
   });
+
+  it("buildArgs returns defaultArgs unchanged when no model override", () => {
+    const manager = new SessionManager(
+      { ...mockClaudeConfig, defaultArgs: ["--output-format", "stream-json", "--model", "claude-haiku-4-5-20251001"] },
+      mockFormatterConfig,
+    );
+    const args = manager.buildArgs(null, undefined);
+    expect(args).toEqual(["--output-format", "stream-json", "--model", "claude-haiku-4-5-20251001"]);
+  });
+
+  it("buildArgs overrides --model in defaultArgs when model is provided", () => {
+    const manager = new SessionManager(
+      { ...mockClaudeConfig, defaultArgs: ["--output-format", "stream-json", "--model", "claude-haiku-4-5-20251001"] },
+      mockFormatterConfig,
+    );
+    const args = manager.buildArgs(null, "claude-opus-4-6");
+    expect(args).toContain("--model");
+    expect(args).toContain("claude-opus-4-6");
+    expect(args).not.toContain("claude-haiku-4-5-20251001");
+    expect(args.filter(a => a === "--model")).toHaveLength(1);
+  });
+
+  it("buildArgs appends --model when defaultArgs has no existing --model", () => {
+    const manager = new SessionManager(
+      { ...mockClaudeConfig, defaultArgs: ["--output-format", "stream-json"] },
+      mockFormatterConfig,
+    );
+    const args = manager.buildArgs(null, "claude-opus-4-6");
+    expect(args).toEqual(["--output-format", "stream-json", "--model", "claude-opus-4-6"]);
+  });
+
+  it("buildArgs includes --resume when sessionId is provided", () => {
+    const manager = new SessionManager(mockClaudeConfig, mockFormatterConfig);
+    const args = manager.buildArgs("session-abc", undefined);
+    expect(args).toContain("--resume");
+    expect(args).toContain("session-abc");
+  });
 });
