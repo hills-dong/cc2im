@@ -57,6 +57,7 @@ formatter:
 
     expect(msg.type).toBe("sync.state");
     expect(msg.activeSessions).toEqual([]);
+    expect(msg.bufferedOutput).toEqual({});
     ws.close();
   });
 
@@ -71,6 +72,7 @@ formatter:
     });
 
     expect(msg.type).toBe("chat.error");
+    expect(msg).toHaveProperty("sessionId");
     expect(msg.error.code).toBe("PROJECT_NOT_FOUND");
     ws.close();
   });

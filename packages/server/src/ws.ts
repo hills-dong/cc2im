@@ -42,6 +42,7 @@ async function handleChatSend(
   if (!project) {
     send(ws, {
       type: "chat.error",
+      sessionId: payload.sessionId ?? "",
       error: { code: "PROJECT_NOT_FOUND", message: `Project '${payload.project}' not found` },
     });
     return;
@@ -113,8 +114,12 @@ export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketS
 
       switch (msg.type) {
         case "sync.state": {
-          const activeSessions = ctx.sessionManager.activeKeys();
-          send(ws, { type: "sync.state", activeSessions });
+          const keys = ctx.sessionManager.activeKeys();
+          const activeSessions = keys.map((key) => {
+            const parts = key.split(":");
+            return { sessionId: parts.slice(1).join(":") || key, project: parts[1] ?? "" };
+          });
+          send(ws, { type: "sync.state", activeSessions, bufferedOutput: {} });
           break;
         }
 

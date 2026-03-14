@@ -51,6 +51,16 @@
   let showAddProject = $state(false);
   let newProject = $state<Project>({ name: "", directory: "", model: "", platforms: [] });
 
+  function normalizePlatforms(platforms: unknown): string[] {
+    if (Array.isArray(platforms)) return platforms;
+    if (platforms && typeof platforms === "object") {
+      return Object.entries(platforms as Record<string, boolean>)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
+    }
+    return [];
+  }
+
   function populateFields(cfg: Config) {
     claudeCommand = cfg.claude?.command ?? "";
     claudeDefaultArgs = (cfg.claude?.defaultArgs ?? []).join(", ");
@@ -59,12 +69,14 @@
     discordToken = cfg.discord?.token ?? "";
     larkAppId = cfg.lark?.appId ?? "";
     larkAppSecret = cfg.lark?.appSecret ?? "";
-    formatterMaxDiscord = cfg.formatter?.maxMessageLengthDiscord ?? 2000;
-    formatterMaxLark = cfg.formatter?.maxMessageLengthLark ?? 4096;
-    formatterMaxConcurrent = cfg.formatter?.maxConcurrentProcesses ?? 5;
+    // Handle both flat (maxMessageLengthDiscord) and nested (maxMessageLength.discord) formats
+    const fmt = cfg.formatter as any;
+    formatterMaxDiscord = fmt?.maxMessageLengthDiscord ?? fmt?.maxMessageLength?.discord ?? 2000;
+    formatterMaxLark = fmt?.maxMessageLengthLark ?? fmt?.maxMessageLength?.lark ?? 4096;
+    formatterMaxConcurrent = fmt?.maxConcurrentProcesses ?? 5;
     projects = (cfg.projects ?? []).map((p) => ({
       ...p,
-      platforms: p.platforms ?? [],
+      platforms: normalizePlatforms(p.platforms),
     }));
   }
 

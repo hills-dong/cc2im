@@ -31,7 +31,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-CC2IM_CONFIG="$CONFIG" CC2IM_DB="$DB" node packages/cli/dist/cli.js web --port "$PORT" --bind 127.0.0.1 &
+CC2IM_DB="$DB" node packages/cli/dist/cli.js web --port "$PORT" --bind 127.0.0.1 --config "$CONFIG" &
 SERVER_PID=$!
 sleep 3
 

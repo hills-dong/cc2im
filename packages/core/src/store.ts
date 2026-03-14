@@ -160,6 +160,17 @@ export class Store {
     this.db.prepare("DELETE FROM pending_restarts").run();
   }
 
+  listSessions(projectName?: string): ThreadRow[] {
+    if (projectName) {
+      return this.db.prepare(
+        "SELECT * FROM threads WHERE project_name = ? ORDER BY created_at DESC"
+      ).all(projectName) as ThreadRow[];
+    }
+    return this.db.prepare(
+      "SELECT * FROM threads ORDER BY created_at DESC"
+    ).all() as ThreadRow[];
+  }
+
   saveTokenUsage(
     sessionId: string, projectName: string, model: string | null,
     inputTokens: number, outputTokens: number,

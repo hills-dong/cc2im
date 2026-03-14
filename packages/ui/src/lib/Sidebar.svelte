@@ -35,9 +35,11 @@
     try {
       const res = await fetch("/api/projects");
       if (res.ok) {
-        const data: string[] = await res.json();
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : [];
         projects = await Promise.all(
-          data.map(async (name) => {
+          items.map(async (item: any) => {
+            const name = typeof item === "string" ? item : item.name;
             const sessions = await loadSessions(name);
             return { name, sessions, expanded: true };
           })

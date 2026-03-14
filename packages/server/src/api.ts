@@ -147,7 +147,8 @@ export async function handleApi(
 
   // GET /api/sessions?project=xxx
   if (method === "GET" && pathname === "/api/sessions") {
-    return json(res, 200, []); // TODO
+    const project = url.searchParams.get("project") ?? undefined;
+    return json(res, 200, ctx.store.listSessions(project));
   }
 
   // GET /api/stats/tokens?project=xxx or ?session=xxx
