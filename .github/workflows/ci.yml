@@ -24,7 +24,25 @@ jobs:
       - run: npm install && npm run build
       - name: Smoke test
         run: |
-          node packages/cli/dist/cli.js web --port 9999 --bind 127.0.0.1 &
+          cat > /tmp/smoke-config.yaml <<'CONF'
+          lark:
+            appId: ""
+            appSecret: ""
+          discord:
+            token: ""
+          projects: []
+          claude:
+            command: echo
+            defaultArgs: []
+            bufferInterval: 500
+            timeout: 5000
+          formatter:
+            maxMessageLength:
+              discord: 2000
+              lark: 30000
+            maxConcurrentProcesses: 5
+          CONF
+          CC2IM_CONFIG=/tmp/smoke-config.yaml CC2IM_DB=/tmp/smoke.db node packages/cli/dist/cli.js web --port 9999 --bind 127.0.0.1 &
           sleep 3
           curl -f http://127.0.0.1:9999/api/projects
           curl -f http://127.0.0.1:9999/api/config
