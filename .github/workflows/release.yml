@@ -22,10 +22,13 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - run: npm install && npm run build
+      - name: Copy UI assets for Tauri
+        run: cp -r packages/ui/dist packages/desktop/dist
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: packages/desktop
           tagName: ${{ github.ref_name }}
           releaseName: "cc2im ${{ github.ref_name }}"
           releaseBody: "Desktop release for cc2im"
