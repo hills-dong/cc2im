@@ -1,10 +1,11 @@
 import http from "http";
 import { readFileSync } from "fs";
 import { join, extname } from "path";
-import { loadConfig } from "@cc2im/core";
+import { loadConfig, SessionManager } from "@cc2im/core";
 import { Store } from "@cc2im/core";
 import { handleApi } from "./api.js";
 import type { ApiContext } from "./api.js";
+import { attachWebSocket } from "./ws.js";
 
 export interface ServerOptions {
   port: number;
@@ -81,6 +82,9 @@ export function createServer(options: ServerOptions): Promise<http.Server> {
       res.end("Not found");
     }
   });
+
+  const sessionManager = new SessionManager(config.claude, config.formatter);
+  attachWebSocket(server, { config, store, sessionManager });
 
   return new Promise((resolve, reject) => {
     server.listen(port, bind, () => resolve(server));
