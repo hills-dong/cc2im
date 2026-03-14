@@ -209,6 +209,7 @@ API 服务端口随机分配（Desktop）或可配置（Web），通过 stdout �
 |------|------|------|
 | `chat.send` | `{ project, sessionId?, message, images? }` | 发送消息（sessionId 省略则创建新会话） |
 | `chat.abort` | `{ project, sessionId }` | 中断当前会话 |
+| `sync.state` | `{}` | 重连后请求当前状态（见 6.5） |
 
 **服务端 → 客户端:**
 
@@ -218,6 +219,7 @@ API 服务端口随机分配（Desktop）或可配置（Web），通过 stdout �
 | `chat.done` | `{ sessionId, result, tokens }` | 会话完成 + token 用量 |
 | `chat.error` | `{ sessionId, error }` | 错误 |
 | `status.update` | `{ activeCount, queued }` | 全局状态变更（托盘图标用） |
+| `sync.state` | `{ activeSessions: [...], bufferedOutput: {...} }` | 重连后状态恢复响应 |
 
 ### 6.3 错误响应格式
 
