@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build"
+    "dev": "npx tauri dev",
+    "build:desktop": "npx tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
