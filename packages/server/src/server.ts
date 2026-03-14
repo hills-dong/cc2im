@@ -1,7 +1,10 @@
 import http from "http";
-import { readFileSync } from "fs";
-import { join, extname } from "path";
+import { readFileSync, existsSync } from "fs";
+import { join, extname, dirname } from "path";
+import { fileURLToPath } from "url";
 import { loadConfig, SessionManager } from "@cc2im/core";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { Store } from "@cc2im/core";
 import { handleApi } from "./api.js";
 import type { ApiContext } from "./api.js";
@@ -54,7 +57,14 @@ function serveStatic(
 }
 
 export function createServer(options: ServerOptions): Promise<http.Server> {
-  const { port, bind, configPath, dbPath, staticDir } = options;
+  const { port, bind, configPath, dbPath } = options;
+
+  // Auto-detect UI dist directory if not explicitly set
+  let staticDir = options.staticDir;
+  if (!staticDir) {
+    const uiDist = join(__dirname, "../../ui/dist");
+    if (existsSync(uiDist)) staticDir = uiDist;
+  }
 
   const config = loadConfig(configPath);
   const store = new Store(dbPath);
