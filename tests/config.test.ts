@@ -75,4 +75,59 @@ formatter:
   it("throws on missing config file", () => {
     expect(() => loadConfig("/nonexistent/config.yaml")).toThrow();
   });
+
+  it("loads project with optional model field", () => {
+    writeFileSync(configPath, `
+discord:
+  token: "test-token"
+lark:
+  appId: ""
+  appSecret: ""
+projects:
+  - name: "test"
+    directory: "/tmp/test"
+    model: "claude-opus-4-6"
+    platforms:
+      discord: true
+claude:
+  command: "claude"
+  defaultArgs: ["--print"]
+  bufferInterval: 500
+  timeout: 300000
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+  maxConcurrentProcesses: 5
+`);
+    const config = loadConfig(configPath);
+    expect(config.projects[0].model).toBe("claude-opus-4-6");
+  });
+
+  it("project without model field has undefined model", () => {
+    writeFileSync(configPath, `
+discord:
+  token: "test-token"
+lark:
+  appId: ""
+  appSecret: ""
+projects:
+  - name: "test"
+    directory: "/tmp/test"
+    platforms:
+      discord: true
+claude:
+  command: "claude"
+  defaultArgs: ["--print"]
+  bufferInterval: 500
+  timeout: 300000
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+  maxConcurrentProcesses: 5
+`);
+    const config = loadConfig(configPath);
+    expect(config.projects[0].model).toBeUndefined();
+  });
 });

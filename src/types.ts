@@ -37,6 +37,7 @@ export interface OutgoingMessage {
 export interface ProjectConfig {
   name: string;
   directory: string;
+  model?: string;
   platforms: Partial<Record<Platform, boolean>>;
 }
 
@@ -95,6 +96,8 @@ export interface PlatformAdapter {
   stop(): Promise<void>;
   setupProject(project: ProjectConfig): Promise<ChannelInfo>;
   createThread(channelId: string, messageId: string): Promise<string>;
+  getThreadName(threadId: string): Promise<string>;
+  renameThread(threadId: string, name: string): Promise<void>;
   sendMessage(channelId: string, threadId: string, content: string): Promise<string>;
   editMessage(channelId: string, messageId: string, content: string): Promise<void>;
   uploadFile(channelId: string, threadId: string, filename: string, content: Buffer): Promise<void>;
