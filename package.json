@@ -1,29 +1,10 @@
 {
-  "name": "cc2im",
-  "version": "0.1.0",
-  "description": "Claude Code to IM bridge — chat with Claude Code via Lark and Discord",
-  "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "cc2im": "dist/cli.js"
-  },
+  "name": "cc2im-monorepo",
+  "private": true,
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.0.0",
-    "discord.js": "^14.16.0",
-    "yaml": "^2.6.0"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
-    "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspace=packages/cli"
   }
 }
