@@ -30,7 +30,7 @@ export class Router {
   }
 
   isManagementCommand(content: string): boolean {
-    return /^\/im-(add-project|remove-project|list-projects|reload-config)/.test(content);
+    return /^\/im-(add-project|remove-project|list-projects|reload-config|done|reopen)/.test(content);
   }
 
   parseManagementCommand(content: string): { command: string; args: string[] } | null {

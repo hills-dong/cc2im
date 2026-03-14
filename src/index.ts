@@ -592,6 +592,7 @@ export function generateThreadTitle(userMessage: string, claudeCommand: string):
   return new Promise((resolve, reject) => {
     execFile(claudeCommand, ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions", "--model", "haiku", "-p", prompt], {
       timeout: 15000,
+      maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env, CLAUDECODE: undefined },
     }, (err, stdout) => {
       if (err) return reject(err);

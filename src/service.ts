@@ -197,8 +197,8 @@ export function restart(): void {
   if (platform === "systemd") {
     run("systemctl", ["--user", "restart", "cc2im.service"]);
   } else {
-    stop();
-    start();
+    run("launchctl", ["stop", "com.cc2im"]);
+    run("launchctl", ["start", "com.cc2im"]);
   }
   console.log("cc2im restarted.");
 }

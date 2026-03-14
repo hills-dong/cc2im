@@ -1,12 +1,20 @@
 import Database from "better-sqlite3";
 import type { Platform } from "./types.js";
 
+export type ThreadStatus = "active" | "done";
+
+export const THREAD_STATUS_ICONS: Record<ThreadStatus, string> = {
+  active: "🔄",
+  done: "✅",
+};
+
 export interface ThreadRow {
   thread_id: string;
   platform: string;
   channel_id: string;
   session_id: string;
   project_name: string;
+  status: ThreadStatus;
   created_at: string;
 }
 
@@ -36,6 +44,7 @@ export class Store {
         channel_id TEXT NOT NULL,
         session_id TEXT NOT NULL,
         project_name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (thread_id, platform)
       );
@@ -49,7 +58,21 @@ export class Store {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (message_id, platform)
       );
+
+      CREATE TABLE IF NOT EXISTS pending_restarts (
+        thread_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (thread_id, platform)
+      );
     `);
+
+    // Add status column to existing databases
+    try {
+      this.db.exec("ALTER TABLE threads ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+    } catch {
+      // Column already exists
+    }
   }
 
   upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string): void {
@@ -64,6 +87,12 @@ export class Store {
     return (this.db.prepare(
       "SELECT * FROM threads WHERE thread_id = ? AND platform = ?"
     ).get(threadId, platform) as ThreadRow | undefined) ?? null;
+  }
+
+  updateThreadStatus(threadId: string, platform: Platform, status: ThreadStatus): void {
+    this.db.prepare(
+      "UPDATE threads SET status = ? WHERE thread_id = ? AND platform = ?"
+    ).run(status, threadId, platform);
   }
 
   deleteThread(threadId: string, platform: Platform): void {
@@ -88,6 +117,23 @@ export class Store {
     return this.db.prepare(
       "SELECT * FROM messages WHERE thread_id = ? AND platform = ? AND is_bot = 1 ORDER BY created_at DESC LIMIT 1"
     ).get(threadId, platform) as MessageRow | null;
+  }
+
+  markPendingRestart(threadId: string, platform: Platform): void {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO pending_restarts (thread_id, platform) VALUES (?, ?)
+    `).run(threadId, platform);
+  }
+
+  getPendingRestarts(): ThreadRow[] {
+    return this.db.prepare(`
+      SELECT t.* FROM pending_restarts pr
+      JOIN threads t ON t.thread_id = pr.thread_id AND t.platform = pr.platform
+    `).all() as ThreadRow[];
+  }
+
+  clearPendingRestarts(): void {
+    this.db.prepare("DELETE FROM pending_restarts").run();
   }
 
   close(): void {
