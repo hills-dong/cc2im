@@ -87,7 +87,6 @@ fn main() {
     let port = Arc::new(AtomicU16::new(0));
     let port_clone = port.clone();
     let child_process: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
-    let child_for_exit = child_process.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -195,11 +194,4 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-
-    // Clean up child process on exit
-    if let Ok(mut guard) = child_for_exit.lock() {
-        if let Some(ref mut child) = *guard {
-            let _ = child.kill();
-        }
-    }
 }
