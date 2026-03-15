@@ -151,10 +151,10 @@
 | Svelte UI: 引导向导 | ✅ | 3 个 E2E onboarding 测试 |
 | Desktop: Tauri 项目 | ✅ | 代码存在，CI Release workflow 已触发 |
 | CI 构建+smoke test | ✅ | GitHub Actions run #23092101242 全部通过 |
-| Release 三平台构建 | ⏳ | run #23092164385 已触发 (v0.1.0 tag) |
+| Release 三平台构建 | ✅ | run #23099035933 全部通过。产物: .deb, .rpm, .AppImage (Linux), .dmg, .app.tar.gz (macOS universal), .exe, .msi (Windows) |
 
 ---
 
 ## 结论
 
-23 个 Task 全部完成。验收过程中发现 7 个 Bug 并全部修复。新增 12 个 E2E Playwright 测试。所有 66 个测试 (54 单元 + 12 E2E) 全部通过。
+23 个 Task 全部完成。验收过程中发现 7 个 Bug 并全部修复。新增 12 个 E2E Playwright 测试。所有 66 个测试 (54 单元 + 12 E2E) 全部通过。Release v0.1.0 三平台构建全部成功，GitHub Release 已发布 7 个安装包。
