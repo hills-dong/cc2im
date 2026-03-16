@@ -132,15 +132,15 @@ export class Store {
   }
 
   getMessage(messageId: string, platform: Platform): MessageRow | null {
-    return this.db.prepare(
+    return (this.db.prepare(
       "SELECT * FROM messages WHERE message_id = ? AND platform = ?"
-    ).get(messageId, platform) as MessageRow | null;
+    ).get(messageId, platform) as MessageRow | undefined) ?? null;
   }
 
   getLastBotMessage(threadId: string, platform: Platform): MessageRow | null {
-    return this.db.prepare(
+    return (this.db.prepare(
       "SELECT * FROM messages WHERE thread_id = ? AND platform = ? AND is_bot = 1 ORDER BY created_at DESC LIMIT 1"
-    ).get(threadId, platform) as MessageRow | null;
+    ).get(threadId, platform) as MessageRow | undefined) ?? null;
   }
 
   markPendingRestart(threadId: string, platform: Platform): void {

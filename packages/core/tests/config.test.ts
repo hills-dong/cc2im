@@ -76,6 +76,89 @@ formatter:
     expect(() => loadConfig("/nonexistent/config.yaml")).toThrow();
   });
 
+  it("env var overrides lark appId", () => {
+    writeFileSync(configPath, `
+discord:
+  token: "t"
+lark:
+  appId: "file-id"
+  appSecret: "file-secret"
+projects: []
+claude:
+  command: "claude"
+  defaultArgs: []
+  bufferInterval: 500
+  timeout: 300000
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+  maxConcurrentProcesses: 5
+`);
+    process.env.LARK_APP_ID = "env-id";
+    const config = loadConfig(configPath);
+    expect(config.lark.appId).toBe("env-id");
+    expect(config.lark.appSecret).toBe("file-secret");
+    delete process.env.LARK_APP_ID;
+  });
+
+  it("env var overrides lark appSecret", () => {
+    writeFileSync(configPath, `
+discord:
+  token: "t"
+lark:
+  appId: "file-id"
+  appSecret: "file-secret"
+projects: []
+claude:
+  command: "claude"
+  defaultArgs: []
+  bufferInterval: 500
+  timeout: 300000
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+  maxConcurrentProcesses: 5
+`);
+    process.env.LARK_APP_SECRET = "env-secret";
+    const config = loadConfig(configPath);
+    expect(config.lark.appSecret).toBe("env-secret");
+    expect(config.lark.appId).toBe("file-id");
+    delete process.env.LARK_APP_SECRET;
+  });
+
+  it("all three env vars override simultaneously", () => {
+    writeFileSync(configPath, `
+discord:
+  token: "file-token"
+lark:
+  appId: "file-id"
+  appSecret: "file-secret"
+projects: []
+claude:
+  command: "claude"
+  defaultArgs: []
+  bufferInterval: 500
+  timeout: 300000
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+  maxConcurrentProcesses: 5
+`);
+    process.env.DISCORD_TOKEN = "env-token";
+    process.env.LARK_APP_ID = "env-id";
+    process.env.LARK_APP_SECRET = "env-secret";
+    const config = loadConfig(configPath);
+    expect(config.discord.token).toBe("env-token");
+    expect(config.lark.appId).toBe("env-id");
+    expect(config.lark.appSecret).toBe("env-secret");
+    delete process.env.DISCORD_TOKEN;
+    delete process.env.LARK_APP_ID;
+    delete process.env.LARK_APP_SECRET;
+  });
+
   it("loads project with optional model field", () => {
     writeFileSync(configPath, `
 discord:

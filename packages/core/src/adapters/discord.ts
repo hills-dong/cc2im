@@ -32,7 +32,11 @@ export class DiscordAdapter implements PlatformAdapter {
       ],
     });
 
-    this.client.on("messageCreate", (msg) => this.handleMessage(msg));
+    this.client.on("messageCreate", (msg) => {
+      this.handleMessage(msg).catch((err) =>
+        console.error("[cc2im] Error handling Discord message:", err)
+      );
+    });
     this.client.on("messageReactionAdd", (reaction, user) =>
       this.handleReaction(reaction as MessageReaction, user as User)
     );

@@ -50,7 +50,7 @@ WorkingDirectory=${paths.workDir}
 ExecStart=${paths.nodePath} ${paths.entryPath}
 Environment=CC2IM_CONFIG=${paths.configPath}
 Environment=PATH=${process.env.PATH}
-Restart=always
+Restart=on-failure
 RestartSec=5
 KillMode=control-group
 

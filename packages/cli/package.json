@@ -8,7 +8,7 @@
     "cc2im": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/cli.js",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run"

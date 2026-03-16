@@ -15,6 +15,10 @@ interface ReactionResult {
 export class Formatter {
   constructor(private config: FormatterConfig) {}
 
+  updateConfig(config: FormatterConfig): void {
+    this.config = config;
+  }
+
   getMaxLength(platform: Platform): number {
     return this.config.maxMessageLength[platform] ?? 2000;
   }
@@ -49,7 +53,7 @@ export class Formatter {
     const reservedForPrefix = 12;
 
     while (remaining.length > 0) {
-      const available = maxLen - reservedForPrefix;
+      const available = Math.max(1, maxLen - reservedForPrefix);
 
       if (remaining.length <= available) {
         rawChunks.push(remaining);
@@ -130,7 +134,7 @@ export class Formatter {
             attachments.push({
               filename: basename(filePath),
               content,
-              mimeType: `image/${ext.slice(1) === "jpg" ? "jpeg" : ext.slice(1)}`,
+              mimeType: `image/${ext.slice(1) === "jpg" ? "jpeg" : ext.slice(1) === "svg" ? "svg+xml" : ext.slice(1)}`,
             });
           } catch {}
         }

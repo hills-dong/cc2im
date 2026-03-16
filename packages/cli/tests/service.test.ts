@@ -18,7 +18,7 @@ describe("generateSystemdUnit", () => {
     expect(unit).toContain("CC2IM_CONFIG=/home/user/.config/cc2im/config.yaml");
     expect(unit).toContain("WorkingDirectory=/home/user/.config/cc2im");
     expect(unit).toContain("KillMode=control-group");
-    expect(unit).toContain("Restart=always");
+    expect(unit).toContain("Restart=on-failure");
   });
 });
 

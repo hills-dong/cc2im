@@ -57,7 +57,11 @@
       const res = await fetch(`/api/sessions?project=${encodeURIComponent(project)}`);
       if (res.ok) {
         const data = await res.json();
-        return Array.isArray(data) ? data : [];
+        const items = Array.isArray(data) ? data : [];
+        return items.map((s: any) => ({
+          id: s.id ?? s.session_id ?? s.thread_id ?? "",
+          name: s.name ?? "",
+        }));
       }
     } catch (e) {
       console.error("Failed to load sessions", e);

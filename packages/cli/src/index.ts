@@ -64,7 +64,7 @@ export async function main() {
     if (adapter instanceof DiscordAdapter) {
       adapter.onSlashCommand(async (interaction) => {
         try {
-          await handleSlashCommand(interaction, adapter, router, store, config);
+          await handleSlashCommand(interaction, adapter, router, store, config, sessionManager, formatter);
         } catch (err) {
           console.error("Error handling slash command:", err);
           if (!interaction.replied && !interaction.deferred) {
@@ -73,6 +73,11 @@ export async function main() {
         }
       });
     }
+  }
+
+  if (adapters.length === 0) {
+    console.error("No platform adapters configured. Set at least one platform token in config.yaml.");
+    process.exit(1);
   }
 
   console.log("cc2im ready.");
@@ -154,7 +159,7 @@ async function handleMessage(
 ) {
   // Check for management commands
   if (router.isManagementCommand(msg.content)) {
-    await handleManagementCommand(msg, adapter, router, store, config);
+    await handleManagementCommand(msg, adapter, router, store, config, sessionManager, formatter);
     return;
   }
 
@@ -262,12 +267,20 @@ async function handleMessage(
     }
   }, flushInterval);
 
+  // Inject platform context so Claude knows which platform it's on
+  const platformHints: Record<string, string> = {
+    discord: "[平台: Discord | 可自由使用 emoji。要给消息加 reaction 请在回复末尾写 [react:emoji]。要发送图片请在回复中写出图片的绝对路径，系统会自动上传。]",
+    lark: "[平台: 飞书/Lark | 请使用简洁的文字回复。]",
+    web: "[平台: Web UI]",
+  };
+  const platformPrefix = platformHints[msg.platform] ? platformHints[msg.platform] + "\n\n" : "";
+
   try {
     const result = await sessionManager.invoke(
       threadKey,
       project.directory,
       existingSessionId,
-      msg.content,
+      platformPrefix + msg.content,
       (event) => {
         // Track current activity from stream events
         const evt = event as any;
@@ -407,6 +420,8 @@ async function handleSlashCommand(
   router: Router,
   store: Store,
   config: ReturnType<typeof loadConfig>,
+  sessionManager?: SessionManager,
+  formatter?: Formatter,
 ) {
   const command = interaction.commandName.replace("im-", "");
   const channel = interaction.channel;
@@ -467,7 +482,10 @@ async function handleSlashCommand(
     }
 
     case "reload-config": {
-      Object.assign(config, loadConfig(CONFIG_PATH));
+      const newConfig = loadConfig(CONFIG_PATH);
+      Object.assign(config, newConfig);
+      sessionManager?.updateConfig(config.claude, config.formatter);
+      formatter?.updateConfig(config.formatter);
       await interaction.reply("✅ Config reloaded");
       break;
     }
@@ -483,6 +501,8 @@ async function handleManagementCommand(
   router: Router,
   store: Store,
   config: ReturnType<typeof loadConfig>,
+  sessionManager?: SessionManager,
+  formatter?: Formatter,
 ) {
   const parsed = router.parseManagementCommand(msg.content);
   if (!parsed) return;
@@ -527,7 +547,10 @@ async function handleManagementCommand(
     }
 
     case "reload-config": {
-      Object.assign(config, loadConfig(CONFIG_PATH));
+      const newConfig = loadConfig(CONFIG_PATH);
+      Object.assign(config, newConfig);
+      sessionManager?.updateConfig(config.claude, config.formatter);
+      formatter?.updateConfig(config.formatter);
       await adapter.sendMessage(msg.channelId, threadId, "✅ Config reloaded");
       break;
     }
@@ -559,7 +582,7 @@ async function handleManagementCommand(
   }
 }
 
-function formatUserError(err: unknown): string {
+export function formatUserError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const code = (err as NodeJS.ErrnoException)?.code;
 
@@ -578,9 +601,9 @@ function formatUserError(err: unknown): string {
   return `❌ Error: ${msg}`;
 }
 
-function stripStatusIcon(name: string): string {
+export function stripStatusIcon(name: string): string {
   // Remove known status icon prefixes
-  return name.replace(/^[🔄✅]\s*/, "");
+  return name.replace(/^(?:🔄|✅)\s*/, "");
 }
 
 async function getThreadName(adapter: PlatformAdapter, threadId: string): Promise<string> {

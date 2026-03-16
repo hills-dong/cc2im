@@ -20,17 +20,25 @@ export const currentSessionId = writable<string | null>(null);
 export const sessions = writable<Map<string, Session>>(new Map());
 
 let streamBuffer = "";
+// Map server threadKey → client sessKey for correlating responses
+const threadKeyMap = new Map<string, string>();
 
 on("chat.stream", (event) => {
   if (event.contentType === "text") {
     streamBuffer += event.content;
+    const sessKey = threadKeyMap.get(event.sessionId) ?? event.sessionId;
     sessions.update(s => {
-      const key = event.sessionId;
-      const session = s.get(key);
+      const session = s.get(sessKey);
       if (session) {
         const last = session.messages[session.messages.length - 1];
         if (last?.streaming) {
-          last.content = streamBuffer;
+          // Create new objects so Svelte 5 $derived detects changes
+          const updated = { ...last, content: streamBuffer };
+          const newMessages = [...session.messages.slice(0, -1), updated];
+          const newSession = { ...session, messages: newMessages };
+          const newMap = new Map(s);
+          newMap.set(sessKey, newSession);
+          return newMap;
         }
       }
       return s;
@@ -39,24 +47,70 @@ on("chat.stream", (event) => {
 });
 
 on("chat.done", (event) => {
+  const sessKey = threadKeyMap.get(event.sessionId) ?? event.sessionId;
   streamBuffer = "";
   sessions.update(s => {
-    const session = s.get(event.sessionId);
+    const session = s.get(sessKey);
     if (session) {
       const last = session.messages[session.messages.length - 1];
       if (last) {
-        last.content = event.result;
-        last.streaming = false;
-        last.tokens = { input: event.tokens.inputTokens, output: event.tokens.outputTokens };
+        const updated = {
+          ...last,
+          content: event.result,
+          streaming: false,
+          tokens: {
+            input: event.tokens?.inputTokens ?? 0,
+            output: event.tokens?.outputTokens ?? 0,
+          },
+        };
+        const newMessages = [...session.messages.slice(0, -1), updated];
+        const newSession = {
+          ...session,
+          messages: newMessages,
+          id: event.realSessionId ?? session.id,
+        };
+        const newMap = new Map(s);
+        newMap.set(sessKey, newSession);
+        return newMap;
       }
     }
     return s;
   });
+  threadKeyMap.delete(event.sessionId);
+});
+
+on("chat.error", (event) => {
+  const sessKey = threadKeyMap.get(event.sessionId) ?? event.sessionId;
+  streamBuffer = "";
+  sessions.update(s => {
+    const session = s.get(sessKey);
+    if (session) {
+      const last = session.messages[session.messages.length - 1];
+      if (last?.streaming) {
+        const updated = {
+          ...last,
+          content: `Error: ${event.error?.message ?? "Unknown error"}`,
+          streaming: false,
+        };
+        const newMessages = [...session.messages.slice(0, -1), updated];
+        const newSession = { ...session, messages: newMessages };
+        const newMap = new Map(s);
+        newMap.set(sessKey, newSession);
+        return newMap;
+      }
+    }
+    return s;
+  });
+  threadKeyMap.delete(event.sessionId);
 });
 
 export function sendMessage(project: string, message: string, sessionId?: string): void {
   const msgId = crypto.randomUUID();
-  const sessKey = sessionId ?? `new-${Date.now()}`;
+  const sessKey = sessionId ?? `new-${project}`;
+  const threadKey = `web:${project}:${Date.now()}`;
+
+  // Map threadKey so we can correlate server responses to our local session
+  threadKeyMap.set(threadKey, sessKey);
 
   sessions.update(s => {
     if (!s.has(sessKey)) {
@@ -69,5 +123,5 @@ export function sendMessage(project: string, message: string, sessionId?: string
   });
 
   streamBuffer = "";
-  send({ type: "chat.send", project, sessionId, message });
+  send({ type: "chat.send", project, sessionId, message, threadKey });
 }

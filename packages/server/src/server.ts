@@ -1,6 +1,6 @@
 import http from "http";
 import { readFileSync, existsSync } from "fs";
-import { join, extname, dirname } from "path";
+import { join, extname, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { loadConfig, SessionManager } from "@cc2im/core";
 
@@ -35,7 +35,13 @@ function serveStatic(
   urlPath: string,
 ): void {
   // Resolve to a file path, fallback to index.html for SPA
-  let filePath = join(staticDir, urlPath === "/" ? "index.html" : urlPath);
+  let filePath = resolve(staticDir, urlPath === "/" ? "index.html" : "." + urlPath);
+  // Prevent path traversal: ensure resolved path stays within staticDir
+  if (!filePath.startsWith(resolve(staticDir) + "/") && filePath !== resolve(staticDir, "index.html")) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
   const ext = extname(filePath);
   const mime = MIME_TYPES[ext] ?? "application/octet-stream";
 
@@ -94,7 +100,7 @@ export function createServer(options: ServerOptions): Promise<http.Server> {
   });
 
   const sessionManager = new SessionManager(config.claude, config.formatter);
-  attachWebSocket(server, { config, store, sessionManager });
+  attachWebSocket(server, { config, store, sessionManager, skipAuth: options.skipAuth });
 
   return new Promise((resolve, reject) => {
     server.listen(port, bind, () => resolve(server));

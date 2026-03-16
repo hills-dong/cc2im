@@ -5,3 +5,7 @@ config.yaml
 *.db-journal
 *.db-shm
 *.db-wal
+*.log
+e2e-screenshots/
+test-results/
+.claude/

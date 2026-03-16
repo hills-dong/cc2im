@@ -11,7 +11,10 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const [salt, hash] = stored.split(":");
   if (!salt || !hash) return false;
   const derived = scryptSync(password, salt, 64).toString("hex");
-  return timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(derived, "hex"));
+  const hashBuf = Buffer.from(hash, "hex");
+  const derivedBuf = Buffer.from(derived, "hex");
+  if (hashBuf.length !== derivedBuf.length) return false;
+  return timingSafeEqual(hashBuf, derivedBuf);
 }
 
 /** Minimal JWT implementation using HMAC-SHA256 */

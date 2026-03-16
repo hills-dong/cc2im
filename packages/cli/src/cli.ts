@@ -61,6 +61,7 @@ switch (command) {
       bind,
       configPath: resolvedConfig,
       dbPath,
+      skipAuth: true,
     });
     console.log(`cc2im web UI available at http://${bind}:${port}`);
     break;

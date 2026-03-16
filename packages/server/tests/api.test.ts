@@ -113,14 +113,15 @@ formatter:
     expect((data as { name: string }).name).toBe("test-project");
   });
 
-  it("GET /api/stats/tokens?project=xxx returns token stats with inputTokens=0", async () => {
+  it("GET /api/stats/tokens?project=xxx returns token stats with totalInput=0", async () => {
     const { status, data } = await request(
       server,
       "GET",
       "/api/stats/tokens?project=nonexistent",
     );
     expect(status).toBe(200);
-    expect((data as { inputTokens: number }).inputTokens).toBe(0);
+    expect((data as { totalInput: number }).totalInput).toBe(0);
+    expect((data as { daily: unknown[] }).daily).toEqual([]);
   });
 
   it("GET /api/nonexistent returns 404", async () => {

@@ -3,11 +3,14 @@ import type http from "http";
 import type { AppConfig, StreamEvent } from "@cc2im/core";
 import type { Store } from "@cc2im/core";
 import type { SessionManager } from "@cc2im/core";
+import { verifyToken } from "./auth.js";
 
 export interface WsContext {
   config: AppConfig;
   store: Store;
   sessionManager: SessionManager;
+  skipAuth?: boolean;
+  jwtSecret?: string;
 }
 
 interface BufferedOutput {
@@ -34,7 +37,7 @@ async function handleChatSend(
   ws: WebSocket,
   clients: Set<WebSocket>,
   ctx: WsContext,
-  payload: { project: string; message: string; sessionId?: string; model?: string },
+  payload: { project: string; message: string; sessionId?: string; model?: string; threadKey?: string },
 ): Promise<void> {
   const { config, sessionManager } = ctx;
 
@@ -49,7 +52,7 @@ async function handleChatSend(
   }
 
   const sessionId = payload.sessionId ?? null;
-  const threadKey = `web:${payload.project}:${Date.now()}`;
+  const threadKey = payload.threadKey ?? `web:${payload.project}:${Date.now()}`;
 
   try {
     const result = await sessionManager.invoke(
@@ -58,7 +61,22 @@ async function handleChatSend(
       sessionId,
       payload.message,
       (event: StreamEvent) => {
-        broadcast(clients, { type: "chat.stream", threadKey, event });
+        // Transform raw StreamEvents into the flat format the client expects
+        if (event.type === "assistant" && "message" in event) {
+          const msg = (event as any).message;
+          if (msg?.content) {
+            for (const block of msg.content) {
+              if (block.type === "text" && block.text) {
+                broadcast(clients, {
+                  type: "chat.stream",
+                  sessionId: threadKey,
+                  contentType: "text",
+                  content: block.text,
+                });
+              }
+            }
+          }
+        }
       },
       undefined,
       undefined,
@@ -67,14 +85,15 @@ async function handleChatSend(
 
     broadcast(clients, {
       type: "chat.done",
-      threadKey,
-      sessionId: result.sessionId,
-      text: result.text,
+      sessionId: threadKey,
+      realSessionId: result.sessionId || null,
+      result: result.text,
+      tokens: { inputTokens: 0, outputTokens: 0 },
     });
   } catch (err: unknown) {
     broadcast(clients, {
       type: "chat.error",
-      threadKey,
+      sessionId: threadKey,
       error: {
         code: "INVOKE_ERROR",
         message: err instanceof Error ? err.message : String(err),
@@ -84,7 +103,21 @@ async function handleChatSend(
 }
 
 export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketServer {
-  const wss = new WebSocketServer({ server, path: "/ws" });
+  const wss = new WebSocketServer({
+    server,
+    path: "/ws",
+    verifyClient: (info, cb) => {
+      if (ctx.skipAuth) return cb(true);
+      // Check token from query string: /ws?token=xxx
+      const url = new URL(info.req.url ?? "/", "http://localhost");
+      const token = url.searchParams.get("token");
+      if (token && ctx.jwtSecret && verifyToken(token, ctx.jwtSecret)) {
+        cb(true);
+      } else {
+        cb(false, 401, "Unauthorized");
+      }
+    },
+  });
   const clients = new Set<WebSocket>();
 
   // Heartbeat interval
@@ -129,6 +162,7 @@ export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketS
             message: msg.message as string,
             sessionId: msg.sessionId as string | undefined,
             model: msg.model as string | undefined,
+            threadKey: msg.threadKey as string | undefined,
           }).catch((err) => {
             console.error("chat.send error:", err);
           });

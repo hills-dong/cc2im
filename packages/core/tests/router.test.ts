@@ -48,4 +48,25 @@ describe("Router", () => {
     expect(router.isManagementCommand("/im-add-project foo /tmp")).toBe(true);
     expect(router.isManagementCommand("hello world")).toBe(false);
   });
+
+  it("returns null for getSessionId when no thread exists", () => {
+    const router = new Router(mockConfig, store);
+    expect(router.getSessionId("unknown-thread", "discord")).toBeNull();
+  });
+
+  it("returns session ID for existing thread", () => {
+    const router = new Router(mockConfig, store);
+    // Insert a thread via the store
+    store.upsertThread("thread-1", "discord", "channel-1", "session-abc", "test-project");
+    expect(router.getSessionId("thread-1", "discord")).toBe("session-abc");
+  });
+
+  it("returns updated session ID after upsert", () => {
+    const router = new Router(mockConfig, store);
+    store.upsertThread("thread-1", "discord", "channel-1", "session-1", "test-project");
+    expect(router.getSessionId("thread-1", "discord")).toBe("session-1");
+    // Update session
+    store.upsertThread("thread-1", "discord", "channel-1", "session-2", "test-project");
+    expect(router.getSessionId("thread-1", "discord")).toBe("session-2");
+  });
 });

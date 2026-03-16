@@ -83,6 +83,12 @@ fn find_cli_script() -> Option<String> {
     None
 }
 
+/// Parse a port number from a line like "cc2im web UI available at http://0.0.0.0:8080"
+/// Looks for the last colon-separated segment and tries to parse it as u16.
+fn parse_port_from_line(line: &str) -> Option<u16> {
+    line.rsplit(':').next().and_then(|s| s.trim().parse::<u16>().ok())
+}
+
 fn main() {
     let port = Arc::new(AtomicU16::new(0));
     let port_clone = port.clone();
@@ -111,11 +117,9 @@ fn main() {
                                         let reader = BufReader::new(stdout);
                                         for line in reader.lines() {
                                             if let Ok(line) = line {
-                                                if let Some(port_str) = line.rsplit(':').next() {
-                                                    if let Ok(p) = port_str.trim().parse::<u16>() {
-                                                        port_clone.store(p, Ordering::SeqCst);
-                                                        break;
-                                                    }
+                                                if let Some(p) = parse_port_from_line(&line) {
+                                                    port_clone.store(p, Ordering::SeqCst);
+                                                    break;
                                                 }
                                             }
                                         }
@@ -194,4 +198,114 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    // --- parse_port_from_line ---
+
+    #[test]
+    fn parse_port_typical_url() {
+        assert_eq!(parse_port_from_line("cc2im web UI available at http://0.0.0.0:8080"), Some(8080));
+    }
+
+    #[test]
+    fn parse_port_localhost() {
+        assert_eq!(parse_port_from_line("listening on http://127.0.0.1:3000"), Some(3000));
+    }
+
+    #[test]
+    fn parse_port_just_port() {
+        assert_eq!(parse_port_from_line(":4567"), Some(4567));
+    }
+
+    #[test]
+    fn parse_port_with_trailing_whitespace() {
+        assert_eq!(parse_port_from_line("http://localhost:9090  "), Some(9090));
+    }
+
+    #[test]
+    fn parse_port_no_port_in_line() {
+        assert_eq!(parse_port_from_line("no port here"), None);
+    }
+
+    #[test]
+    fn parse_port_empty_string() {
+        assert_eq!(parse_port_from_line(""), None);
+    }
+
+    #[test]
+    fn parse_port_colon_but_not_number() {
+        assert_eq!(parse_port_from_line("key:value"), None);
+    }
+
+    #[test]
+    fn parse_port_zero() {
+        assert_eq!(parse_port_from_line(":0"), Some(0));
+    }
+
+    #[test]
+    fn parse_port_overflow_u16() {
+        // 70000 > u16::MAX (65535)
+        assert_eq!(parse_port_from_line(":70000"), None);
+    }
+
+    // --- find_node ---
+
+    #[test]
+    fn find_node_returns_some_on_system_with_node() {
+        // This test assumes node is installed (CI/dev environment)
+        // If node is not installed, this test is allowed to return None
+        let result = find_node();
+        if which_exists("node") {
+            assert!(result.is_some(), "node is in PATH but find_node returned None");
+        }
+    }
+
+    fn which_exists(cmd: &str) -> bool {
+        Command::new("which").arg(cmd).output().map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    // --- find_cli_script ---
+
+    #[test]
+    fn find_cli_script_finds_local_dev_script() {
+        // find_cli_script checks relative paths from CWD.
+        // We test by changing to a temp dir with the expected structure.
+        let tmp = tempfile::tempdir().unwrap();
+        let cli_dir = tmp.path().join("packages/cli/dist");
+        fs::create_dir_all(&cli_dir).unwrap();
+        let script = cli_dir.join("cli.js");
+        fs::write(&script, "// stub").unwrap();
+
+        let prev_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let result = find_cli_script();
+
+        std::env::set_current_dir(&prev_dir).unwrap();
+        assert_eq!(result, Some("packages/cli/dist/cli.js".to_string()));
+    }
+
+    #[test]
+    fn find_cli_script_returns_none_in_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prev_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let result = find_cli_script();
+
+        std::env::set_current_dir(&prev_dir).unwrap();
+        // Should be None unless /usr/local/bin/cc2im or /opt/homebrew/bin/cc2im exists
+        // We can't fully control system paths, but in most test envs this is None
+        if !std::path::Path::new("/usr/local/bin/cc2im").exists()
+            && !std::path::Path::new("/opt/homebrew/bin/cc2im").exists()
+        {
+            assert_eq!(result, None);
+        }
+    }
 }

@@ -29,10 +29,21 @@ function error(
   json(res, status, payload);
 }
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => (data += chunk));
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error("Request body too large"));
+        return;
+      }
+      data += chunk;
+    });
     req.on("end", () => resolve(data));
     req.on("error", reject);
   });
@@ -75,7 +86,13 @@ export async function handleApi(
     } catch {
       return error(res, 400, "VALIDATION_ERROR", "Invalid JSON body");
     }
-    Object.assign(ctx.config, parsed);
+    // Only allow known top-level config keys to prevent prototype pollution
+    const allowedKeys = ["discord", "lark", "projects", "claude", "formatter"] as const;
+    for (const key of allowedKeys) {
+      if (key in parsed) {
+        (ctx.config as any)[key] = (parsed as any)[key];
+      }
+    }
     saveConfig(ctx.configPath, ctx.config);
     return json(res, 200, maskConfig(ctx.config));
   }
@@ -160,7 +177,20 @@ export async function handleApi(
       return json(res, 200, stats);
     }
     if (project) {
-      const stats = ctx.store.getProjectTokens(project);
+      const aggregate = ctx.store.getProjectTokens(project);
+      const dailyRaw = ctx.store.getDailyTokens(project);
+      const stats = {
+        totalInput: aggregate.inputTokens,
+        totalOutput: aggregate.outputTokens,
+        totalCache: aggregate.cacheReadTokens + aggregate.cacheCreationTokens,
+        daily: dailyRaw.map(d => ({
+          date: d.date,
+          model: d.model,
+          inputTokens: d.inputTokens,
+          outputTokens: d.outputTokens,
+          cacheTokens: d.cacheReadTokens + d.cacheCreationTokens,
+        })),
+      };
       return json(res, 200, stats);
     }
     return error(

@@ -19,6 +19,11 @@ export class SessionManager {
     private formatterConfig: FormatterConfig,
   ) {}
 
+  updateConfig(claudeConfig: ClaudeConfig, formatterConfig: FormatterConfig): void {
+    this.claudeConfig = claudeConfig;
+    this.formatterConfig = formatterConfig;
+  }
+
   get activeCount(): number {
     return this.active.size;
   }
@@ -73,7 +78,10 @@ export class SessionManager {
         queue.push(resolve);
       });
     }
-    this.queues.set(threadKey, []);
+    // Only create a new queue if one doesn't exist (another waiter may have created it)
+    if (!this.queues.has(threadKey)) {
+      this.queues.set(threadKey, []);
+    }
 
     // Wait for concurrency slot
     while (!this.canAccept()) {
@@ -185,13 +193,23 @@ export class SessionManager {
       proc.on("error", (err) => {
         clearTimeout(idleTimer);
         this.active.delete(threadKey);
-        this.queues.delete(threadKey);
+
+        // Process queue so pending callers aren't stuck forever
+        const queue = this.queues.get(threadKey);
+        if (queue && queue.length > 0) {
+          const next = queue.shift()!;
+          next();
+        } else {
+          this.queues.delete(threadKey);
+        }
+
         reject(err);
       });
     });
   }
 
   abort(sessionId: string): boolean {
+    if (!sessionId) return false;
     for (const [key, proc] of this.active) {
       if (key.includes(sessionId)) {
         proc.kill("SIGTERM");
