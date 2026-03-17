@@ -8,6 +8,10 @@
 
 **Tech Stack:** SQLite (better-sqlite3), Node.js HTTP API, Svelte 5
 
+**Test Scene:** Scene 3 (TDD) — test-first development
+**requirement_name:** `token-stats-ui-optimization`
+**Test documents:** `docs/hills-test/token-stats-ui-optimization/`
+
 ---
 
 ## File Structure
@@ -18,20 +22,27 @@
 | `packages/server/src/contracts/api.ts` | Modify | Add `TokenTotals`, `SessionOverview`, `ProjectOverview`, `OverviewResponse` types |
 | `packages/server/src/api.ts` | Modify | Add `GET /api/stats/overview?window=` route with nested response assembly |
 | `packages/ui/src/lib/Stats.svelte` | Rewrite | Time window tabs + summary cards + collapsible project cards + session tables |
-| `packages/core/tests/store-tokens.test.ts` | Modify | Add tests for `getOverviewTokens()` |
+| `packages/core/tests/store-tokens.test.ts` | Modify | Add unit tests for `getOverviewTokens()` |
+| `test/e2e/stats-*.spec.ts` | Modify/Create | E2E tests for new Stats page |
 
 ---
 
-## Task 1: Store — `getOverviewTokens()` method
+## Task 1: Unit Test — case analysis + code generation
 
-**Files:**
-- Modify: `packages/core/src/store.ts:33-43` (add interface after `DailyTokenStats`)
-- Modify: `packages/core/src/store.ts:255` (add method before `close()`)
-- Test: `packages/core/tests/store-tokens.test.ts`
+**Skill:** `hills-unit-test` (Sub-Agent A: Case Analyst → Sub-Agent B: Test Developer)
 
-- [ ] **Step 1: Write failing tests for `getOverviewTokens()`**
+- [ ] **Step 1: `hills-unit-test` Case Analyst — generate unit test case checklist**
 
-Add to `packages/core/tests/store-tokens.test.ts`:
+Analyze `packages/core/src/store.ts` and the design spec. Output checklist to `docs/hills-test/token-stats-ui-optimization/unit-test-cases.md`.
+
+Target methods:
+- `Store.getOverviewTokens(since)` — time filtering, JOIN dedup, multi-project grouping, ordering, empty data, orphan sessions
+
+- [ ] **Step 2: `hills-unit-test` Test Developer — generate test code from checklist**
+
+Read the checklist, write test code to `packages/core/tests/store-tokens.test.ts`.
+
+Reference test code (from design):
 
 ```ts
 describe("getOverviewTokens", () => {
@@ -43,7 +54,6 @@ describe("getOverviewTokens", () => {
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(2);
-    // sess-2 has more in+out (300) than sess-1 (150), so it comes first
     expect(rows[0].sessionId).toBe("sess-2");
     expect(rows[0].projectName).toBe("proj-a");
     expect(rows[0].platform).toBe("discord");
@@ -74,7 +84,6 @@ describe("getOverviewTokens", () => {
 
   it("filters by since timestamp", () => {
     store.saveTokenUsage("sess-old", "proj-a", "opus", 100, 50, 0, 0);
-    // Insert a row with a past timestamp using raw SQL
     (store as any).db.prepare(`
       INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '-2 days'))
@@ -82,7 +91,6 @@ describe("getOverviewTokens", () => {
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const rows = store.getOverviewTokens(since);
-    // Only sess-old (inserted "now") should match, not sess-old2
     expect(rows.every(r => r.sessionId !== "sess-old2")).toBe(true);
   });
 
@@ -101,14 +109,41 @@ describe("getOverviewTokens", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+---
+
+## Task 2: Unit Test — quality review
+
+**Skill:** `hills-test-quality` (Sub-Agent: Quality Reviewer, read-only)
+
+- [ ] **Step 1: `hills-test-quality` — review unit test code**
+
+Review `packages/core/tests/store-tokens.test.ts` against the checklist.
+Output report to `docs/hills-test/token-stats-ui-optimization/quality-review.md`.
+
+If BLOCKING → route back to Task 1 Test Developer for fixes (max 3 rounds).
+
+---
+
+## Task 3: TDD Red — run unit tests, expect failures
+
+**Skill:** `hills-test-run` (Sub-Agent: Test Executor, read-only)
+
+- [ ] **Step 1: `hills-test-run` — run unit tests**
 
 Run: `cd packages/core && npx vitest run tests/store-tokens.test.ts`
 Expected: FAIL — `store.getOverviewTokens is not a function`
+Verify tests fail for the RIGHT reason (missing implementation, not broken test logic).
+Output report to `docs/hills-test/token-stats-ui-optimization/test-run.md`.
 
-- [ ] **Step 3: Add `OverviewTokenRow` interface to store.ts**
+---
 
-Add after `DailyTokenStats` (line 43):
+## Task 4: Implement backend — store + API contracts + API route
+
+**Role:** Business Developer (does NOT touch test code)
+
+- [ ] **Step 1: Add `OverviewTokenRow` interface to store.ts**
+
+Add after `DailyTokenStats` (line 43) in `packages/core/src/store.ts`:
 
 ```ts
 export interface OverviewTokenRow {
@@ -124,7 +159,7 @@ export interface OverviewTokenRow {
 }
 ```
 
-- [ ] **Step 4: Implement `getOverviewTokens()` method**
+- [ ] **Step 2: Implement `getOverviewTokens()` method**
 
 Add before `close()` in the `Store` class:
 
@@ -158,26 +193,7 @@ getOverviewTokens(since: string | null): OverviewTokenRow[] {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
-
-Run: `cd packages/core && npx vitest run tests/store-tokens.test.ts`
-Expected: ALL PASS
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add packages/core/src/store.ts packages/core/tests/store-tokens.test.ts
-git commit -m "feat(core): add getOverviewTokens() store method with time filtering"
-```
-
----
-
-## Task 2: API contracts — response types
-
-**Files:**
-- Modify: `packages/server/src/contracts/api.ts`
-
-- [ ] **Step 1: Add type definitions**
+- [ ] **Step 3: Add API contract types**
 
 Append to `packages/server/src/contracts/api.ts`:
 
@@ -213,23 +229,9 @@ export interface OverviewResponse {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 4: Add API route**
 
-```bash
-git add packages/server/src/contracts/api.ts
-git commit -m "feat(server): add token stats overview API contract types"
-```
-
----
-
-## Task 3: API route — `GET /api/stats/overview`
-
-**Files:**
-- Modify: `packages/server/src/api.ts:179` (add before existing `/api/stats/tokens` route)
-
-- [ ] **Step 1: Implement the overview route**
-
-Add before the existing `/api/stats/tokens` block in `handleApi()`:
+Add before the existing `/api/stats/tokens` block in `packages/server/src/api.ts` `handleApi()`:
 
 ```ts
 // GET /api/stats/overview?window=24h|7d|all
@@ -281,7 +283,6 @@ if (method === "GET" && pathname === "/api/stats/overview") {
     grandTotal.cacheCreation += row.cacheCreationTokens;
   }
 
-  // Sort projects by total consumption descending
   const projects = [...projectMap.entries()]
     .sort((a, b) => (b[1].total.input + b[1].total.output) - (a[1].total.input + a[1].total.output))
     .map(([name, data]) => ({ name, ...data }));
@@ -290,32 +291,78 @@ if (method === "GET" && pathname === "/api/stats/overview") {
 }
 ```
 
-- [ ] **Step 2: Add import for `OverviewResponse` types (if needed for documentation)**
-
-The types are used implicitly — the response shape matches `OverviewResponse`. No runtime import needed since we're building the object literally.
-
-- [ ] **Step 3: Verify build passes**
+- [ ] **Step 5: Verify build passes**
 
 Run: `cd packages/server && npx tsc --noEmit`
 Expected: No errors
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add packages/server/src/api.ts
-git commit -m "feat(server): add GET /api/stats/overview endpoint with time window filtering"
+git add packages/core/src/store.ts packages/server/src/contracts/api.ts packages/server/src/api.ts
+git commit -m "feat: add getOverviewTokens store method and /api/stats/overview endpoint"
 ```
 
 ---
 
-## Task 4: Frontend — rewrite Stats.svelte
+## Task 5: TDD Green — run unit tests, all should pass
 
-**Files:**
-- Rewrite: `packages/ui/src/lib/Stats.svelte`
+**Skill:** `hills-test-run` (Sub-Agent: Test Executor, read-only)
 
-- [ ] **Step 1: Rewrite Stats.svelte with new layout**
+- [ ] **Step 1: `hills-test-run` — run unit tests**
 
-Replace the entire file content with:
+Run: `cd packages/core && npx vitest run tests/store-tokens.test.ts`
+Expected: ALL PASS
+Output report to `docs/hills-test/token-stats-ui-optimization/test-run.md` (append `## Round 2`).
+
+If failure:
+- Real bug → route back to Task 4 Business Developer
+- Test defect → route to NEW Test Developer agent to fix
+
+---
+
+## Task 6: E2E Test — case analysis + code generation
+
+**Skill:** `hills-e2e-test` (Sub-Agent A: Case Analyst → Sub-Agent B: Test Developer)
+
+- [ ] **Step 1: `hills-e2e-test` Case Analyst — generate E2E test case checklist**
+
+Analyze Stats.svelte design spec. Output checklist to `docs/hills-test/token-stats-ui-optimization/e2e-test-cases.md`.
+
+Target scenarios:
+- Time window tab switching (24h / 7d / all)
+- Summary cards display (Input, Output, Cache)
+- Project card collapse/expand
+- Session table content (Platform icon, Session name, Time, In, Out)
+- Empty state ("No token usage data in this time window.")
+- API error handling
+
+- [ ] **Step 2: `hills-e2e-test` Test Developer — generate Playwright test code from checklist**
+
+Read the checklist, write test code to `test/e2e/stats-*.spec.ts`.
+
+---
+
+## Task 7: E2E Test — quality review
+
+**Skill:** `hills-test-quality` (Sub-Agent: Quality Reviewer, read-only)
+
+- [ ] **Step 1: `hills-test-quality` — review E2E test code**
+
+Review `test/e2e/stats-*.spec.ts` against the checklist.
+Output report to `docs/hills-test/token-stats-ui-optimization/quality-review.md` (append `## Round 2`).
+
+If BLOCKING → route back to Task 6 Test Developer for fixes (max 3 rounds).
+
+---
+
+## Task 8: Implement frontend — Stats.svelte rewrite
+
+**Role:** Business Developer (does NOT touch test code)
+
+- [ ] **Step 1: Rewrite Stats.svelte**
+
+Replace `packages/ui/src/lib/Stats.svelte` with new layout:
 
 ```svelte
 <script lang="ts">
@@ -728,33 +775,64 @@ git commit -m "feat(ui): rewrite Stats page with time windows and hierarchical p
 
 ---
 
-## Task 5: Integration test — manual verification
+## Task 9: Run all tests — final validation
+
+**Skill:** `hills-test-run` (Sub-Agent: Test Executor, read-only)
 
 - [ ] **Step 1: Build all packages**
 
 Run: `npm run build`
 Expected: No errors
 
-- [ ] **Step 2: Restart service and verify**
+- [ ] **Step 2: `hills-test-run` — run unit tests + E2E tests**
 
-Run: `cc2im restart`
+Run unit: `cd packages/core && npx vitest run tests/store-tokens.test.ts`
+Run E2E: `npx playwright test test/e2e/stats-*.spec.ts`
+Expected: ALL PASS
+Output report to `docs/hills-test/token-stats-ui-optimization/test-run.md` (append `## Round 3`).
 
-Open browser, navigate to Stats page. Verify:
-- Three time window tabs are visible and switchable
-- Summary cards show Input, Output, Cache (read/create)
-- Project cards are collapsible
-- Session table shows Platform icon, Session name, Time, In, Out
-- Empty state shows "No token usage data in this time window."
-
-- [ ] **Step 3: Commit any fixes from manual testing**
+If failure:
+- Real bug → route to Task 4 or Task 8 Business Developer
+- Test defect → route to NEW Test Developer agent
 
 ---
 
-## Task 6: @hills-test — test plan and quality
+## Task 10: Visual walkthrough verification
 
-Per CLAUDE.md rules, invoke `hills-test` to generate a test plan for this feature, then execute the assigned skills:
-- `hills-test-impact` — identify affected tests
-- `hills-unit-test` — verify store tests
-- `hills-test-quality` — review test quality
-- `hills-test-run` — run all tests
-- `hills-test-verify` — visual verification of Stats page
+**Skill:** `hills-test-verify` (Sub-Agent: Walkthrough Verifier, read-only)
+
+- [ ] **Step 1: Restart service**
+
+Run: `npm run build && cc2im restart`
+
+- [ ] **Step 2: `hills-test-verify` — Playwright screenshot verification**
+
+Verify:
+- Three time window tabs are visible and switchable
+- Summary cards show correct Input, Output, Cache values
+- Project cards collapse/expand correctly
+- Session table shows Platform icon, Session name, Time, In, Out
+- Empty state shows "No token usage data in this time window."
+- Data refreshes when switching time windows
+
+Output report to `docs/hills-test/token-stats-ui-optimization/walkthrough.md`.
+Screenshots to `docs/hills-test/token-stats-ui-optimization/screenshots/`.
+
+---
+
+## Pipeline Summary
+
+```
+Task 1:  hills-unit-test    (Case Analyst → Test Developer)
+Task 2:  hills-test-quality (Quality Reviewer)
+Task 3:  hills-test-run     (TDD Red — expect fail)
+Task 4:  Business Developer (store + API contracts + API route)
+Task 5:  hills-test-run     (TDD Green — expect pass)
+Task 6:  hills-e2e-test     (Case Analyst → Test Developer)
+Task 7:  hills-test-quality (Quality Reviewer)
+Task 8:  Business Developer (Stats.svelte rewrite)
+Task 9:  hills-test-run     (all tests — final validation)
+Task 10: hills-test-verify  (visual walkthrough)
+```
+
+**Sub-Agent Iron Rule:** Each skill invocation uses a fresh sub-agent. Case analyst, test developer, business developer, quality reviewer, test executor, and walkthrough verifier NEVER share agents.
