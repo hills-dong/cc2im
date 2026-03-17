@@ -176,6 +176,62 @@ export async function handleApi(
     return json(res, 200, ctx.store.listSessions(project));
   }
 
+  // GET /api/stats/overview?window=24h|7d|all
+  if (method === "GET" && pathname === "/api/stats/overview") {
+    const windowParam = url.searchParams.get("window");
+    if (!windowParam || !["24h", "7d", "all"].includes(windowParam)) {
+      return error(res, 400, "VALIDATION_ERROR", "window must be 24h, 7d, or all");
+    }
+    let since: string | null = null;
+    if (windowParam === "24h") {
+      since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    } else if (windowParam === "7d") {
+      since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    const rows = ctx.store.getOverviewTokens(since);
+
+    const zeroTotals = () => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0 });
+    const projectMap = new Map<string, { total: ReturnType<typeof zeroTotals>; sessions: Array<{
+      sessionId: string; platform: string | null; name: string | null;
+      createdAt: string | null; total: ReturnType<typeof zeroTotals>;
+    }> }>();
+
+    const grandTotal = zeroTotals();
+    for (const row of rows) {
+      if (!projectMap.has(row.projectName)) {
+        projectMap.set(row.projectName, { total: zeroTotals(), sessions: [] });
+      }
+      const proj = projectMap.get(row.projectName)!;
+      const sessionTotal = {
+        input: row.inputTokens,
+        output: row.outputTokens,
+        cacheRead: row.cacheReadTokens,
+        cacheCreation: row.cacheCreationTokens,
+      };
+      proj.sessions.push({
+        sessionId: row.sessionId,
+        platform: row.platform,
+        name: row.sessionName,
+        createdAt: row.sessionCreatedAt,
+        total: sessionTotal,
+      });
+      proj.total.input += row.inputTokens;
+      proj.total.output += row.outputTokens;
+      proj.total.cacheRead += row.cacheReadTokens;
+      proj.total.cacheCreation += row.cacheCreationTokens;
+      grandTotal.input += row.inputTokens;
+      grandTotal.output += row.outputTokens;
+      grandTotal.cacheRead += row.cacheReadTokens;
+      grandTotal.cacheCreation += row.cacheCreationTokens;
+    }
+
+    const projects = [...projectMap.entries()]
+      .sort((a, b) => (b[1].total.input + b[1].total.output) - (a[1].total.input + a[1].total.output))
+      .map(([name, data]) => ({ name, ...data }));
+
+    return json(res, 200, { window: windowParam, total: grandTotal, projects });
+  }
+
   // GET /api/stats/tokens?project=xxx or ?session=xxx
   if (method === "GET" && pathname === "/api/stats/tokens") {
     const project = url.searchParams.get("project");

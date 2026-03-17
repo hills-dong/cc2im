@@ -78,3 +78,33 @@ export interface WsSyncStateResponse {
 }
 
 export type WsServerEvent = WsChatStream | WsChatDone | WsChatError | WsStatusUpdate | WsSyncStateResponse;
+
+/** Token stats overview */
+export type WindowParam = "24h" | "7d" | "all";
+
+export interface TokenTotals {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+}
+
+export interface SessionOverview {
+  sessionId: string;
+  platform: string | null;
+  name: string | null;
+  createdAt: string | null;
+  total: TokenTotals;
+}
+
+export interface ProjectOverview {
+  name: string;
+  total: TokenTotals;
+  sessions: SessionOverview[];
+}
+
+export interface OverviewResponse {
+  window: WindowParam;
+  total: TokenTotals;
+  projects: ProjectOverview[];
+}

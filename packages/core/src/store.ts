@@ -42,6 +42,18 @@ export interface DailyTokenStats extends TokenStats {
   model: string | null;
 }
 
+export interface OverviewTokenRow {
+  projectName: string;
+  sessionId: string;
+  platform: string | null;
+  sessionName: string | null;
+  sessionCreatedAt: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
 export class Store {
   private db: Database.Database;
 
@@ -252,6 +264,34 @@ export class Store {
       GROUP BY DATE(created_at), model
       ORDER BY date DESC
     `).all(projectName) as DailyTokenStats[];
+  }
+
+  getOverviewTokens(since: string | null): OverviewTokenRow[] {
+    const sql = `
+      SELECT
+        tu.project_name AS projectName,
+        tu.session_id AS sessionId,
+        ts.platform,
+        ts.sessionName,
+        ts.sessionCreatedAt,
+        COALESCE(SUM(tu.input_tokens), 0) AS inputTokens,
+        COALESCE(SUM(tu.output_tokens), 0) AS outputTokens,
+        COALESCE(SUM(tu.cache_read_tokens), 0) AS cacheReadTokens,
+        COALESCE(SUM(tu.cache_creation_tokens), 0) AS cacheCreationTokens
+      FROM token_usage tu
+      LEFT JOIN (
+        SELECT session_id,
+               MIN(platform) AS platform,
+               MIN(name) AS sessionName,
+               MIN(created_at) AS sessionCreatedAt
+        FROM threads
+        GROUP BY session_id
+      ) ts ON ts.session_id = tu.session_id
+      WHERE (? IS NULL OR tu.created_at >= ?)
+      GROUP BY tu.project_name, tu.session_id
+      ORDER BY tu.project_name, SUM(tu.input_tokens + tu.output_tokens) DESC
+    `;
+    return this.db.prepare(sql).all(since, since) as OverviewTokenRow[];
   }
 
   close(): void {
