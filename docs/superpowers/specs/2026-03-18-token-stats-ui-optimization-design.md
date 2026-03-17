@@ -46,6 +46,10 @@ interface OverviewResponse {
 - `24h` → `since = now - 24 hours`
 - `7d` → `since = now - 7 days`
 - `all` → 无时间过滤
+- 不合法的 `window` 值返回 400 错误
+
+**空数据处理：**
+- 无数据时汇总卡片显示 0，项目列表显示空状态提示文字
 
 ## 数据库改动
 
@@ -73,24 +77,43 @@ getOverviewTokens(since: string | null): OverviewTokenRow[]
 SELECT
   tu.project_name AS projectName,
   tu.session_id AS sessionId,
-  t.platform,
-  t.name AS sessionName,
-  t.created_at AS sessionCreatedAt,
+  ts.platform,
+  ts.sessionName,
+  ts.sessionCreatedAt,
   COALESCE(SUM(tu.input_tokens), 0) AS inputTokens,
   COALESCE(SUM(tu.output_tokens), 0) AS outputTokens,
   COALESCE(SUM(tu.cache_read_tokens), 0) AS cacheReadTokens,
   COALESCE(SUM(tu.cache_creation_tokens), 0) AS cacheCreationTokens
 FROM token_usage tu
-LEFT JOIN threads t ON t.session_id = tu.session_id
+LEFT JOIN (
+  SELECT session_id,
+         MIN(platform) AS platform,
+         MIN(name) AS sessionName,
+         MIN(created_at) AS sessionCreatedAt
+  FROM threads
+  GROUP BY session_id
+) ts ON ts.session_id = tu.session_id
 WHERE (:since IS NULL OR tu.created_at >= :since)
 GROUP BY tu.project_name, tu.session_id
-ORDER BY tu.project_name, COALESCE(SUM(tu.input_tokens + tu.output_tokens), 0) DESC
+ORDER BY tu.project_name, SUM(tu.input_tokens + tu.output_tokens) DESC
 ```
 
-- LEFT JOIN `threads` 获取 `platform` 和 `name`
+- 子查询先对 `threads` 按 `session_id` 去重（取 MIN），避免 JOIN 导致 token 重复计数
 - 按 `project_name` + `session_id` 分组聚合
 - Session 按 token 总量降序（消耗大的排前面）
+- Projects 也按总 token 降序排列
 - API 层将扁平行组装为嵌套 `projects → sessions` 结构
+- `since` 参数格式：ISO 8601（`YYYY-MM-DDTHH:MM:SS`），兼容 SQLite datetime 比较
+
+### 参数校验
+
+- `window` 参数不合法时返回 400 错误：`{ error: { code: "VALIDATION_ERROR", message: "window must be 24h, 7d, or all" } }`
+
+### 聚合逻辑
+
+- API 层遍历 SQL 返回的扁平行，按 `projectName` 分组构建 `projects` 数组
+- `OverviewResponse.total` 和 `ProjectOverview.total` 由 API 层对行数据求和计算
+- 空数据时返回 `{ window, total: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 }, projects: [] }`
 
 ## 前端 UI 设计
 
