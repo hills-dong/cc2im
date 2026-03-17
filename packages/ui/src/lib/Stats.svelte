@@ -1,27 +1,50 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  type WindowParam = "24h" | "7d" | "all";
 
-  interface DailyRow {
-    date: string;
-    model: string;
+  interface TokenTotals {
     input: number;
     output: number;
-    cache: number;
+    cacheRead: number;
+    cacheCreation: number;
   }
 
-  interface TokenStats {
-    totalInput: number;
-    totalOutput: number;
-    totalCache: number;
-    daily: DailyRow[];
+  interface SessionOverview {
+    sessionId: string;
+    platform: string | null;
+    name: string | null;
+    createdAt: string | null;
+    total: TokenTotals;
   }
 
-  let projects = $state<string[]>([]);
-  let selectedProject = $state("");
-  let stats = $state<TokenStats | null>(null);
-  let loadingProjects = $state(true);
-  let loadingStats = $state(false);
+  interface ProjectOverview {
+    name: string;
+    total: TokenTotals;
+    sessions: SessionOverview[];
+  }
+
+  interface OverviewData {
+    window: WindowParam;
+    total: TokenTotals;
+    projects: ProjectOverview[];
+  }
+
+  let activeWindow = $state<WindowParam>("24h");
+  let data = $state<OverviewData | null>(null);
+  let loading = $state(false);
   let error = $state("");
+  let expandedProjects = $state<Set<string>>(new Set());
+
+  const WINDOWS: { value: WindowParam; label: string }[] = [
+    { value: "24h", label: "最近 24h" },
+    { value: "7d", label: "最近 7天" },
+    { value: "all", label: "全部" },
+  ];
+
+  const PLATFORM_ICONS: Record<string, string> = {
+    discord: "🟣",
+    lark: "🔵",
+    web: "🟢",
+  };
 
   function fmt(n: number): string {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -33,67 +56,42 @@
     return n.toLocaleString();
   }
 
-  async function loadProjects() {
-    loadingProjects = true;
-    error = "";
-    try {
-      const res = await fetch("/api/projects");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // Accept array of strings or array of objects with .name
-      projects = Array.isArray(data)
-        ? data.map((p: unknown) => (typeof p === "string" ? p : (p as { name: string }).name))
-        : [];
-    } catch (e) {
-      error = "Failed to load projects: " + String(e);
-    } finally {
-      loadingProjects = false;
-    }
+  function fmtTime(iso: string | null): string {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
-  async function loadStats() {
-    if (!selectedProject) return;
-    loadingStats = true;
+  function platformIcon(p: string | null): string {
+    return p ? PLATFORM_ICONS[p] ?? "⚪" : "⚪";
+  }
+
+  function toggleProject(name: string) {
+    const next = new Set(expandedProjects);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    expandedProjects = next;
+  }
+
+  async function loadOverview() {
+    loading = true;
     error = "";
-    stats = null;
+    data = null;
     try {
-      const res = await fetch(`/api/stats/tokens?project=${encodeURIComponent(selectedProject)}`);
+      const res = await fetch(`/api/stats/overview?window=${activeWindow}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      stats = await res.json();
+      data = await res.json();
     } catch (e) {
       error = "Failed to load stats: " + String(e);
     } finally {
-      loadingStats = false;
+      loading = false;
     }
   }
 
   $effect(() => {
-    if (selectedProject) {
-      loadStats();
-    }
+    const _w = activeWindow;
+    loadOverview();
   });
-
-  // Bar chart helpers
-  const CHART_HEIGHT = 120;
-  const BAR_WIDTH = 24;
-  const BAR_GAP = 8;
-
-  function chartData(daily: DailyRow[]) {
-    const maxTotal = Math.max(
-      1,
-      ...daily.map((d) => d.input + d.output + d.cache)
-    );
-    return daily.slice(-20).map((d) => ({
-      ...d,
-      total: d.input + d.output + d.cache,
-      height: Math.round(((d.input + d.output + d.cache) / maxTotal) * CHART_HEIGHT),
-      inputH: Math.round((d.input / maxTotal) * CHART_HEIGHT),
-      outputH: Math.round((d.output / maxTotal) * CHART_HEIGHT),
-      cacheH: Math.round((d.cache / maxTotal) * CHART_HEIGHT),
-    }));
-  }
-
-  onMount(loadProjects);
 </script>
 
 <div class="stats-page">
@@ -105,134 +103,77 @@
     <div class="error-msg">{error}</div>
   {/if}
 
-  <div class="filter-row">
-    <label for="project-select">Project</label>
-    {#if loadingProjects}
-      <span class="loading-text">Loading projects…</span>
-    {:else}
-      <select id="project-select" bind:value={selectedProject}>
-        <option value="">— Select a project —</option>
-        {#each projects as p}
-          <option value={p}>{p}</option>
-        {/each}
-      </select>
-    {/if}
+  <div class="window-tabs">
+    {#each WINDOWS as w}
+      <button
+        class="tab-btn"
+        class:active={activeWindow === w.value}
+        onclick={() => { activeWindow = w.value; }}
+      >{w.label}</button>
+    {/each}
   </div>
 
-  {#if loadingStats}
+  {#if loading}
     <div class="loading-text">Loading statistics…</div>
-  {:else if stats}
-    <!-- Summary cards -->
+  {:else if data}
     <div class="summary-cards">
-      <div class="card">
+      <div class="card primary">
         <div class="card-label">Input Tokens</div>
-        <div class="card-value">{fmt(stats.totalInput)}</div>
-        <div class="card-sub">{fmtFull(stats.totalInput)}</div>
+        <div class="card-value">{fmt(data.total.input)}</div>
+        <div class="card-sub">{fmtFull(data.total.input)}</div>
       </div>
-      <div class="card">
+      <div class="card primary">
         <div class="card-label">Output Tokens</div>
-        <div class="card-value">{fmt(stats.totalOutput)}</div>
-        <div class="card-sub">{fmtFull(stats.totalOutput)}</div>
+        <div class="card-value">{fmt(data.total.output)}</div>
+        <div class="card-sub">{fmtFull(data.total.output)}</div>
       </div>
-      <div class="card">
-        <div class="card-label">Cache Tokens</div>
-        <div class="card-value">{fmt(stats.totalCache)}</div>
-        <div class="card-sub">{fmtFull(stats.totalCache)}</div>
-      </div>
-      <div class="card total">
-        <div class="card-label">Total</div>
-        <div class="card-value">{fmt(stats.totalInput + stats.totalOutput + stats.totalCache)}</div>
-        <div class="card-sub">{fmtFull(stats.totalInput + stats.totalOutput + stats.totalCache)}</div>
+      <div class="card secondary">
+        <div class="card-label">Cache (read / create)</div>
+        <div class="card-value-sm">{fmt(data.total.cacheRead)} / {fmt(data.total.cacheCreation)}</div>
+        <div class="card-sub">{fmtFull(data.total.cacheRead)} / {fmtFull(data.total.cacheCreation)}</div>
       </div>
     </div>
 
-    {#if stats.daily && stats.daily.length > 0}
-      <!-- SVG Bar Chart -->
-      <div class="chart-section">
-        <h2>Daily Usage (last {Math.min(stats.daily.length, 20)} days)</h2>
-        <div class="chart-legend">
-          <span class="legend-item input">Input</span>
-          <span class="legend-item output">Output</span>
-          <span class="legend-item cache">Cache</span>
-        </div>
-        <div class="chart-wrap">
-          {#each [chartData(stats.daily)] as cd}
-          <div class="bar-chart">
-          <svg
-            width={cd.length * (BAR_WIDTH + BAR_GAP)}
-            height={CHART_HEIGHT + 36}
-          >
-            {#each cd as bar, i}
-              {@const x = i * (BAR_WIDTH + BAR_GAP)}
-              {@const y0 = CHART_HEIGHT - bar.inputH}
-              {@const y1 = CHART_HEIGHT - bar.inputH - bar.outputH}
-              {@const y2 = CHART_HEIGHT - bar.inputH - bar.outputH - bar.cacheH}
-              <!-- Input bar (bottom) -->
-              {#if bar.inputH > 0}
-                <rect x={x} y={y0} width={BAR_WIDTH} height={bar.inputH} fill="#4cc9f0" opacity="0.85" rx="2" />
-              {/if}
-              <!-- Output bar (middle) -->
-              {#if bar.outputH > 0}
-                <rect x={x} y={y1} width={BAR_WIDTH} height={bar.outputH} fill="#a78bfa" opacity="0.85" rx="2" />
-              {/if}
-              <!-- Cache bar (top) -->
-              {#if bar.cacheH > 0}
-                <rect x={x} y={y2} width={BAR_WIDTH} height={bar.cacheH} fill="#34d399" opacity="0.7" rx="2" />
-              {/if}
-              <!-- Date label -->
-              <text
-                x={x + BAR_WIDTH / 2}
-                y={CHART_HEIGHT + 20}
-                text-anchor="middle"
-                font-size="9"
-                fill="#a0a0b0"
-              >
-                {bar.date.slice(5)}
-              </text>
-            {/each}
-          </svg>
-          </div>
-          {/each}
-        </div>
-      </div>
-
-      <!-- Daily table -->
-      <div class="table-section">
-        <h2>Daily Breakdown</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Model</th>
-                <th>Input</th>
-                <th>Output</th>
-                <th>Cache</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each [...stats.daily].reverse() as row}
-                <tr>
-                  <td class="mono">{row.date}</td>
-                  <td class="mono dimmed">{row.model || "—"}</td>
-                  <td class="num">{fmtFull(row.input)}</td>
-                  <td class="num">{fmtFull(row.output)}</td>
-                  <td class="num">{fmtFull(row.cache)}</td>
-                  <td class="num total">{fmtFull(row.input + row.output + row.cache)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    {#if data.projects.length === 0}
+      <div class="empty-hint">No token usage data in this time window.</div>
     {:else}
-      <div class="empty-hint">No daily data available for this project.</div>
+      {#each data.projects as proj}
+        <div class="project-card">
+          <button class="project-header" onclick={() => toggleProject(proj.name)}>
+            <span class="collapse-icon">{expandedProjects.has(proj.name) ? "▼" : "▶"}</span>
+            <span class="project-name">{proj.name}</span>
+            <span class="project-summary">in: {fmt(proj.total.input)} / out: {fmt(proj.total.output)}</span>
+          </button>
+
+          {#if expandedProjects.has(proj.name)}
+            <div class="session-table-wrap">
+              <table class="session-table">
+                <thead>
+                  <tr>
+                    <th class="col-platform">Platform</th>
+                    <th class="col-session">Session</th>
+                    <th class="col-time">Time</th>
+                    <th class="col-num">In</th>
+                    <th class="col-num">Out</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each proj.sessions as sess}
+                    <tr>
+                      <td class="col-platform">{platformIcon(sess.platform)} {sess.platform ?? "unknown"}</td>
+                      <td class="col-session mono">{sess.name ?? sess.sessionId.slice(0, 12)}</td>
+                      <td class="col-time mono dimmed">{fmtTime(sess.createdAt)}</td>
+                      <td class="col-num">{fmt(sess.total.input)}</td>
+                      <td class="col-num">{fmt(sess.total.output)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
+      {/each}
     {/if}
-  {:else if selectedProject && !loadingStats}
-    <div class="empty-hint">No statistics found.</div>
-  {:else if !selectedProject && !loadingProjects}
-    <div class="empty-hint">Select a project to view token usage.</div>
   {/if}
 </div>
 
@@ -261,47 +202,38 @@
     font-size: 13px;
   }
 
-  .filter-row {
+  .window-tabs {
     display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 28px;
+    gap: 8px;
+    margin-bottom: 24px;
   }
 
-  .filter-row label {
-    font-size: 12px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  select {
-    background: #0f3460;
+  .tab-btn {
+    padding: 8px 20px;
     border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 7px 12px;
-    color: var(--text-primary);
+    border-radius: 6px;
+    background: var(--bg-sidebar);
+    color: var(--text-secondary);
     font-size: 13px;
-    outline: none;
     cursor: pointer;
-    min-width: 200px;
+    transition: all 0.15s;
   }
 
-  select:focus {
+  .tab-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .tab-btn.active {
+    background: var(--accent);
+    color: #fff;
     border-color: var(--accent);
   }
 
-  .loading-text {
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-style: italic;
-  }
-
   .summary-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    display: flex;
     gap: 14px;
-    margin-bottom: 32px;
+    margin-bottom: 28px;
   }
 
   .card {
@@ -309,10 +241,15 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 18px 20px;
+    flex: 1;
   }
 
-  .card.total {
+  .card.primary {
     border-color: var(--accent);
+  }
+
+  .card.secondary {
+    opacity: 0.7;
   }
 
   .card-label {
@@ -330,84 +267,90 @@
     line-height: 1.2;
   }
 
+  .card-value-sm {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    line-height: 1.2;
+  }
+
   .card-sub {
     font-size: 11px;
     color: var(--text-secondary);
     margin-top: 3px;
   }
 
-  .chart-section {
+  .loading-text {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  .empty-hint {
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 13px;
+    padding: 20px 0;
+  }
+
+  .project-card {
     background: var(--bg-sidebar);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 20px 24px;
-    margin-bottom: 24px;
-  }
-
-  .chart-section h2,
-  .table-section h2 {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--accent);
     margin-bottom: 12px;
+    overflow: hidden;
   }
 
-  .chart-legend {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 14px;
-  }
-
-  .legend-item {
-    font-size: 11px;
+  .project-header {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 10px;
+    width: 100%;
+    padding: 14px 18px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.1s;
+  }
+
+  .project-header:hover {
+    background: rgba(76, 201, 240, 0.04);
+  }
+
+  .collapse-icon {
+    font-size: 11px;
     color: var(--text-secondary);
+    width: 14px;
   }
 
-  .legend-item::before {
-    content: "";
-    display: inline-block;
-    width: 12px;
-    height: 10px;
-    border-radius: 2px;
+  .project-name {
+    font-weight: 600;
+    color: var(--accent);
   }
 
-  .legend-item.input::before { background: #4cc9f0; }
-  .legend-item.output::before { background: #a78bfa; }
-  .legend-item.cache::before { background: #34d399; }
-
-  .chart-wrap {
-    overflow-x: auto;
-    padding-bottom: 4px;
+  .project-summary {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-left: auto;
   }
 
-  .bar-chart {
-    display: block;
-  }
-
-  .table-section {
-    background: var(--bg-sidebar);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 20px 24px;
-    margin-bottom: 32px;
-  }
-
-  .table-wrap {
+  .session-table-wrap {
+    padding: 0 18px 14px;
     overflow-x: auto;
   }
 
-  table {
+  .session-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
   }
 
-  thead th {
+  .session-table thead th {
     text-align: left;
-    padding: 8px 12px;
+    padding: 6px 10px;
     color: var(--text-secondary);
     font-size: 11px;
     text-transform: uppercase;
@@ -415,19 +358,27 @@
     border-bottom: 1px solid var(--border);
   }
 
-  tbody tr {
-    border-bottom: 1px solid rgba(42, 42, 78, 0.5);
-    transition: background 0.1s;
+  .session-table tbody tr {
+    border-bottom: 1px solid rgba(42, 42, 78, 0.3);
   }
 
-  tbody tr:hover {
+  .session-table tbody tr:hover {
     background: rgba(76, 201, 240, 0.04);
   }
 
-  tbody td {
-    padding: 9px 12px;
+  .session-table tbody td {
+    padding: 7px 10px;
     color: var(--text-primary);
   }
+
+  .col-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .col-platform { width: 100px; }
+  .col-time { width: 110px; }
+  .col-num { width: 80px; }
 
   .mono {
     font-family: monospace;
@@ -436,22 +387,5 @@
 
   .dimmed {
     color: var(--text-secondary);
-  }
-
-  .num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .num.total {
-    color: var(--accent);
-    font-weight: 600;
-  }
-
-  .empty-hint {
-    color: var(--text-secondary);
-    font-style: italic;
-    font-size: 13px;
-    padding: 20px 0;
   }
 </style>
