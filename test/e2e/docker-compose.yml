@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: test/e2e/Dockerfile
+    ports:
+      - "18081:18081"
+    environment:
+      - CC2IM_DB=/tmp/cc2im-e2e.db
+      - NODE_ENV=test
+    tmpfs:
+      - /tmp:size=100M
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:18081/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s

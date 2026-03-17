@@ -1,4 +1,5 @@
 import type http from "http";
+import { execFile } from "child_process";
 import type { AppConfig } from "@cc2im/core";
 import { loadConfig, saveConfig, addProject, removeProject } from "@cc2im/core";
 import type { Store } from "@cc2im/core";
@@ -93,6 +94,13 @@ export async function handleApi(
         (ctx.config as any)[key] = (parsed as any)[key];
       }
     }
+    // Preserve masked secrets — don't overwrite real values with "***"
+    if (ctx.config.discord?.token === "***") {
+      ctx.config.discord.token = loadConfig(ctx.configPath).discord?.token ?? "";
+    }
+    if (ctx.config.lark?.appSecret === "***") {
+      ctx.config.lark.appSecret = loadConfig(ctx.configPath).lark?.appSecret ?? "";
+    }
     saveConfig(ctx.configPath, ctx.config);
     return json(res, 200, maskConfig(ctx.config));
   }
@@ -186,9 +194,9 @@ export async function handleApi(
         daily: dailyRaw.map(d => ({
           date: d.date,
           model: d.model,
-          inputTokens: d.inputTokens,
-          outputTokens: d.outputTokens,
-          cacheTokens: d.cacheReadTokens + d.cacheCreationTokens,
+          input: d.inputTokens,
+          output: d.outputTokens,
+          cache: d.cacheReadTokens + d.cacheCreationTokens,
         })),
       };
       return json(res, 200, stats);
@@ -199,6 +207,36 @@ export async function handleApi(
       "VALIDATION_ERROR",
       "project or session query param required",
     );
+  }
+
+  // GET /api/sessions/:id/messages
+  const sessMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
+  if (method === "GET" && sessMatch) {
+    const threadId = decodeURIComponent(sessMatch[1]);
+    const messages = ctx.store.getMessagesByThread(threadId, "web");
+    return json(res, 200, messages);
+  }
+
+  // POST /api/claude/test — verify the claude CLI command works
+  if (method === "POST" && pathname === "/api/claude/test") {
+    const body = await readBody(req);
+    let parsed: { command?: string };
+    try {
+      parsed = JSON.parse(body) as { command?: string };
+    } catch {
+      return error(res, 400, "VALIDATION_ERROR", "Invalid JSON body");
+    }
+    const cmd = ctx.config.claude?.command || parsed.command || "claude";
+    return new Promise<void>((resolve) => {
+      execFile(cmd, ["--print-system-prompt"], { timeout: 10000 }, (err, stdout) => {
+        if (err) {
+          error(res, 500, "CLAUDE_TEST_FAILED", `Command failed: ${err.message}`);
+        } else {
+          json(res, 200, { ok: true, output: stdout.slice(0, 200) });
+        }
+        resolve();
+      });
+    });
   }
 
   // Unknown /api/* routes → 404

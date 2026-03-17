@@ -197,9 +197,9 @@ describe("web", () => {
 });
 
 // ---------------------------------------------------------------------------
-// uninstall
+// uninstall (CI only — runs real systemctl, would uninstall host service)
 // ---------------------------------------------------------------------------
-describe("uninstall", () => {
+describe.skipIf(!process.env.CI)("uninstall", () => {
   test("cc2im uninstall completes without crashing", async () => {
     // May print "not installed" or "uninstalled" depending on environment
     const { stdout, exitCode } = await runCli(["uninstall"]);
@@ -209,9 +209,9 @@ describe("uninstall", () => {
 });
 
 // ---------------------------------------------------------------------------
-// start / stop / restart / status (systemctl-dependent, may fail in CI)
+// start / stop / restart / status (CI only — runs real systemctl)
 // ---------------------------------------------------------------------------
-describe("start/stop/restart/status (systemctl dependent)", () => {
+describe.skipIf(!process.env.CI)("start/stop/restart/status (systemctl dependent)", () => {
   // These tests verify the CLI attempts the right system commands.
   // They will fail with systemctl errors when the service is not installed,
   // which is the expected behavior.
@@ -245,9 +245,9 @@ describe("start/stop/restart/status (systemctl dependent)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// run (default command)
+// run (CI only — spawns real bridge that may connect to Discord with host config)
 // ---------------------------------------------------------------------------
-describe("run", () => {
+describe.skipIf(!process.env.CI)("run", () => {
   test("cc2im run starts the bridge or errors with config message", async () => {
     const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
       const proc = spawn("npx", ["tsx", "src/cli.ts", "run"], {

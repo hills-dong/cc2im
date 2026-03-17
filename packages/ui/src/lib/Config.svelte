@@ -5,7 +5,7 @@
     name: string;
     directory: string;
     model?: string;
-    platforms?: string[];
+    platforms: Record<string, boolean>;
   }
 
   interface Config {
@@ -24,8 +24,7 @@
     };
     projects?: Project[];
     formatter?: {
-      maxMessageLengthDiscord?: number;
-      maxMessageLengthLark?: number;
+      maxMessageLength?: Record<string, number>;
       maxConcurrentProcesses?: number;
     };
   }
@@ -49,17 +48,7 @@
 
   let projects = $state<Project[]>([]);
   let showAddProject = $state(false);
-  let newProject = $state<Project>({ name: "", directory: "", model: "", platforms: [] });
-
-  function normalizePlatforms(platforms: unknown): string[] {
-    if (Array.isArray(platforms)) return platforms;
-    if (platforms && typeof platforms === "object") {
-      return Object.entries(platforms as Record<string, boolean>)
-        .filter(([, v]) => v)
-        .map(([k]) => k);
-    }
-    return [];
-  }
+  let newProject = $state<Project>({ name: "", directory: "", model: "", platforms: {} });
 
   function populateFields(cfg: Config) {
     claudeCommand = cfg.claude?.command ?? "";
@@ -69,14 +58,12 @@
     discordToken = cfg.discord?.token ?? "";
     larkAppId = cfg.lark?.appId ?? "";
     larkAppSecret = cfg.lark?.appSecret ?? "";
-    // Handle both flat (maxMessageLengthDiscord) and nested (maxMessageLength.discord) formats
-    const fmt = cfg.formatter as any;
-    formatterMaxDiscord = fmt?.maxMessageLengthDiscord ?? fmt?.maxMessageLength?.discord ?? 2000;
-    formatterMaxLark = fmt?.maxMessageLengthLark ?? fmt?.maxMessageLength?.lark ?? 4096;
-    formatterMaxConcurrent = fmt?.maxConcurrentProcesses ?? 5;
+    formatterMaxDiscord = cfg.formatter?.maxMessageLength?.discord ?? 2000;
+    formatterMaxLark = cfg.formatter?.maxMessageLength?.lark ?? 4096;
+    formatterMaxConcurrent = cfg.formatter?.maxConcurrentProcesses ?? 5;
     projects = (cfg.projects ?? []).map((p) => ({
       ...p,
-      platforms: normalizePlatforms(p.platforms),
+      platforms: p.platforms ?? {},
     }));
   }
 
@@ -113,8 +100,11 @@
         lark: { appId: larkAppId, appSecret: larkAppSecret },
         projects,
         formatter: {
-          maxMessageLengthDiscord: formatterMaxDiscord,
-          maxMessageLengthLark: formatterMaxLark,
+          maxMessageLength: {
+            discord: formatterMaxDiscord,
+            lark: formatterMaxLark,
+            web: 100000,
+          },
           maxConcurrentProcesses: formatterMaxConcurrent,
         },
       };
@@ -144,8 +134,8 @@
         body: JSON.stringify(newProject),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      projects = [...projects, { ...newProject, platforms: [...(newProject.platforms ?? [])] }];
-      newProject = { name: "", directory: "", model: "", platforms: [] };
+      projects = [...projects, { ...newProject, platforms: { ...newProject.platforms } }];
+      newProject = { name: "", directory: "", model: "", platforms: {} };
       showAddProject = false;
       showToast("Project added", "success");
     } catch (e) {
@@ -169,22 +159,18 @@
   function togglePlatform(project: Project, platform: string) {
     const idx = projects.findIndex((p) => p.name === project.name);
     if (idx === -1) return;
-    const existing = projects[idx].platforms ?? [];
-    if (existing.includes(platform)) {
-      projects[idx] = { ...projects[idx], platforms: existing.filter((x) => x !== platform) };
-    } else {
-      projects[idx] = { ...projects[idx], platforms: [...existing, platform] };
-    }
+    const platforms = { ...projects[idx].platforms };
+    platforms[platform] = !platforms[platform];
+    if (!platforms[platform]) delete platforms[platform];
+    projects[idx] = { ...projects[idx], platforms };
     projects = [...projects];
   }
 
   function toggleNewPlatform(platform: string) {
-    const existing = newProject.platforms ?? [];
-    if (existing.includes(platform)) {
-      newProject = { ...newProject, platforms: existing.filter((x) => x !== platform) };
-    } else {
-      newProject = { ...newProject, platforms: [...existing, platform] };
-    }
+    const platforms = { ...newProject.platforms };
+    platforms[platform] = !platforms[platform];
+    if (!platforms[platform]) delete platforms[platform];
+    newProject = { ...newProject, platforms };
   }
 
   function showToast(message: string, type: "success" | "error") {
@@ -212,6 +198,25 @@
   {#if loading}
     <div class="loading">Loading configuration…</div>
   {:else}
+    <!-- Formatter -->
+    <section class="config-section">
+      <h2>Formatter</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fmt-discord">Max Discord Message Length</label>
+          <input id="fmt-discord" type="number" bind:value={formatterMaxDiscord} min="100" />
+        </div>
+        <div class="form-group">
+          <label for="fmt-lark">Max Lark Message Length</label>
+          <input id="fmt-lark" type="number" bind:value={formatterMaxLark} min="100" />
+        </div>
+        <div class="form-group">
+          <label for="fmt-concurrent">Max Concurrent Processes</label>
+          <input id="fmt-concurrent" type="number" bind:value={formatterMaxConcurrent} min="1" max="50" />
+        </div>
+      </div>
+    </section>
+
     <!-- Claude Settings -->
     <section class="config-section">
       <h2>Claude Settings</h2>
@@ -281,7 +286,7 @@
           <div class="form-row">
             <div class="form-group">
               <label for="new-proj-model">Model</label>
-              <input id="new-proj-model" type="text" bind:value={newProject.model} placeholder="claude-opus-4-5" />
+              <input id="new-proj-model" type="text" bind:value={newProject.model} placeholder="haiku / sonnet / opus（默认）" />
             </div>
             <div class="form-group">
               <label for="new-proj-platforms">Platforms</label>
@@ -290,7 +295,7 @@
                   <label class="checkbox-label">
                     <input
                       type="checkbox"
-                      checked={(newProject.platforms ?? []).includes(platform)}
+                      checked={newProject.platforms[platform] ?? false}
                       onchange={() => toggleNewPlatform(platform)}
                     />
                     {platform}
@@ -314,7 +319,7 @@
                 <div class="project-dir">{project.directory}</div>
                 <div class="project-meta">
                   {#if project.model}<span class="badge">{project.model}</span>{/if}
-                  {#each project.platforms ?? [] as platform}
+                  {#each Object.entries(project.platforms).filter(([, v]) => v) as [platform]}
                     <span class="badge platform">{platform}</span>
                   {/each}
                 </div>
@@ -325,7 +330,7 @@
                     <label class="checkbox-label">
                       <input
                         type="checkbox"
-                        checked={(project.platforms ?? []).includes(platform)}
+                        checked={project.platforms[platform] ?? false}
                         onchange={() => togglePlatform(project, platform)}
                       />
                       {platform}
@@ -338,25 +343,6 @@
           {/each}
         </div>
       {/if}
-    </section>
-
-    <!-- Formatter -->
-    <section class="config-section">
-      <h2>Formatter</h2>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="fmt-discord">Max Discord Message Length</label>
-          <input id="fmt-discord" type="number" bind:value={formatterMaxDiscord} min="100" />
-        </div>
-        <div class="form-group">
-          <label for="fmt-lark">Max Lark Message Length</label>
-          <input id="fmt-lark" type="number" bind:value={formatterMaxLark} min="100" />
-        </div>
-        <div class="form-group">
-          <label for="fmt-concurrent">Max Concurrent Processes</label>
-          <input id="fmt-concurrent" type="number" bind:value={formatterMaxConcurrent} min="1" max="50" />
-        </div>
-      </div>
     </section>
 
     <div class="save-footer">

@@ -17,20 +17,28 @@ test.describe("Sidebar with real sessions", () => {
     await server.screenshot(page, "sidebar-projects-loaded");
   });
 
-  test("sidebar shows session list with truncated IDs", async ({ page, server }) => {
+  test("sidebar shows session list with truncated names", async ({ page, server }) => {
     await page.goto(server.baseUrl);
     await page.waitForTimeout(2000);
 
     await expect(page.locator(".sidebar-loading")).not.toBeVisible({ timeout: 5000 });
 
     const sessions = page.locator(".session-item");
-    const count = await sessions.count();
+    await expect(sessions.first()).toBeVisible({ timeout: 5000 });
 
-    if (count > 0) {
-      const firstText = await sessions.first().textContent();
-      // Should be a short hash, not a project name or empty
-      expect(firstText?.trim().length).toBeGreaterThan(0);
-      expect(firstText?.trim().length).toBeLessThanOrEqual(8);
+    const firstText = await sessions.first().textContent();
+    // Should have visible text, not empty
+    expect(firstText?.trim().length).toBeGreaterThan(0);
+    // Display text should be reasonably short (truncated with ellipsis if needed)
+    expect(firstText?.trim().length).toBeLessThanOrEqual(30);
+
+    // Full name/id should be in the title attribute for hover tooltip
+    const title = await sessions.first().getAttribute("title");
+    expect(title?.length).toBeGreaterThan(0);
+
+    // If the title is longer than display text, display should end with "..."
+    if (title && title.length > firstText!.trim().length) {
+      expect(firstText?.trim()).toMatch(/\.\.\.$/);
     }
 
     await server.screenshot(page, "sidebar-sessions-list");
@@ -54,15 +62,13 @@ test.describe("Sidebar with real sessions", () => {
     await expect(page.locator(".sidebar-loading")).not.toBeVisible({ timeout: 5000 });
 
     const sessions = page.locator(".session-item");
-    const count = await sessions.count();
+    await expect(sessions.first()).toBeVisible({ timeout: 5000 });
 
-    if (count > 0) {
-      await sessions.first().click();
-      await page.waitForTimeout(500);
-      await server.screenshot(page, "sidebar-session-selected");
+    await sessions.first().click();
+    await page.waitForTimeout(500);
+    await server.screenshot(page, "sidebar-session-selected");
 
-      await expect(sessions.first()).toHaveClass(/active/, { timeout: 2000 });
-    }
+    await expect(sessions.first()).toHaveClass(/active/, { timeout: 2000 });
   });
 
   test("clicking + button opens new session in chat", async ({ page, server }) => {

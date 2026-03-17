@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { sessions, sendMessage, currentSessionId } from "./stores/chat.js";
+  import { sessions, sendMessage, loadSession, currentSessionId } from "./stores/chat.js";
   import { send } from "./stores/connection.js";
   import MessageBubble from "./MessageBubble.svelte";
   import ChatInput from "./ChatInput.svelte";
@@ -36,6 +36,12 @@
     void messages.length;
     void isStreaming;
     scrollToBottom();
+  });
+
+  $effect(() => {
+    if (sessKey && !sessKey.startsWith("new-")) {
+      loadSession("", sessKey, project ?? "");
+    }
   });
 
   function scrollToBottom() {
@@ -82,7 +88,7 @@
       {/if}
     </div>
 
-    <div class="token-bar">
+    <div class="token-bar token-stats">
       <span>Session tokens — in: {totalInputTokens.toLocaleString()} / out: {totalOutputTokens.toLocaleString()}</span>
     </div>
 

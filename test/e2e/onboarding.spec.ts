@@ -95,61 +95,49 @@ test.describe("Onboarding Wizard", () => {
 
       // Step 2: Test Claude command
       const testBtn = page.locator(".btn-primary:has-text('Test')");
-      const isStep2 = await testBtn.isVisible().catch(() => false);
+      await expect(testBtn).toBeVisible({ timeout: 5000 });
+      await testBtn.click();
+      await page.waitForTimeout(5000);
 
-      if (isStep2) {
-        await testBtn.click();
-        await page.waitForTimeout(5000);
+      const successMsg = page.locator(".status-msg.success");
+      await expect(successMsg).toBeVisible({ timeout: 10000 });
 
-        const successMsg = page.locator(".status-msg.success");
-        const isSuccess = await successMsg.isVisible().catch(() => false);
+      await server.screenshot(page, "onboarding-step2-result");
 
-        await server.screenshot(page, "onboarding-step2-result");
-
-        if (isSuccess) {
-          const nextBtn2 = page.locator(".btn-primary:has-text('Next')");
-          await nextBtn2.click();
-        } else {
-          // Can't proceed past step 2 without working claude command
-          // Restore and skip the rest
-          return;
-        }
-      }
+      const nextBtn2 = page.locator(".btn-primary:has-text('Next')");
+      await nextBtn2.click();
 
       await page.waitForTimeout(1000);
       await server.screenshot(page, "onboarding-step3");
 
       // Step 3: Project details
       const projName = page.locator("#proj-name");
-      if (await projName.isVisible().catch(() => false)) {
-        await projName.fill("e2e-onboarding-test");
-        const projDir = page.locator("#proj-dir");
-        await projDir.fill("/tmp/e2e-onboarding");
+      await expect(projName).toBeVisible({ timeout: 5000 });
+      await projName.fill("e2e-onboarding-test");
+      const projDir = page.locator("#proj-dir");
+      await projDir.fill("/tmp/e2e-onboarding");
 
-        const nextBtn3 = page.locator(".btn-primary:has-text('Next')");
-        await nextBtn3.click();
-        await page.waitForTimeout(1000);
-        await server.screenshot(page, "onboarding-step4");
-      }
+      const nextBtn3 = page.locator(".btn-primary:has-text('Next')");
+      await nextBtn3.click();
+      await page.waitForTimeout(1000);
+      await server.screenshot(page, "onboarding-step4");
 
       // Step 4: Platform tokens (optional — skip)
       const skipBtn = page.locator(".btn-ghost:has-text('Skip')");
-      if (await skipBtn.isVisible().catch(() => false)) {
-        await skipBtn.click();
-        await page.waitForTimeout(1000);
-        await server.screenshot(page, "onboarding-step5");
-      }
+      await expect(skipBtn).toBeVisible({ timeout: 5000 });
+      await skipBtn.click();
+      await page.waitForTimeout(1000);
+      await server.screenshot(page, "onboarding-step5");
 
       // Step 5: Complete
       const finishBtn = page.locator(".btn-primary:has-text('Start Chatting')");
-      if (await finishBtn.isVisible().catch(() => false)) {
-        await finishBtn.click();
-        await page.waitForTimeout(2000);
+      await expect(finishBtn).toBeVisible({ timeout: 5000 });
+      await finishBtn.click();
+      await page.waitForTimeout(2000);
 
-        // Onboarding should be hidden now
-        await expect(overlay).not.toBeVisible({ timeout: 5000 });
-        await server.screenshot(page, "onboarding-complete");
-      }
+      // Onboarding should be hidden now
+      await expect(overlay).not.toBeVisible({ timeout: 5000 });
+      await server.screenshot(page, "onboarding-complete");
     } finally {
       // ALWAYS restore original projects, no matter what
       await restoreProjects();

@@ -15,6 +15,7 @@ export interface ThreadRow {
   session_id: string;
   project_name: string;
   status: ThreadStatus;
+  name?: string;
   created_at: string;
 }
 
@@ -24,6 +25,8 @@ export interface MessageRow {
   thread_id: string;
   is_bot: number;
   content_summary: string | null;
+  input_tokens: number;
+  output_tokens: number;
   created_at: string;
 }
 
@@ -97,14 +100,37 @@ export class Store {
     } catch {
       // Column already exists
     }
+
+    // Add name column to existing databases
+    try {
+      this.db.exec("ALTER TABLE threads ADD COLUMN name TEXT");
+    } catch {
+      // Column already exists
+    }
+
+    // Add token columns to messages table
+    try {
+      this.db.exec("ALTER TABLE messages ADD COLUMN input_tokens INTEGER DEFAULT 0");
+      this.db.exec("ALTER TABLE messages ADD COLUMN output_tokens INTEGER DEFAULT 0");
+    } catch {
+      // Columns already exist
+    }
   }
 
-  upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string): void {
-    this.db.prepare(`
-      INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(thread_id, platform) DO UPDATE SET session_id = excluded.session_id
-    `).run(threadId, platform, channelId, sessionId, projectName);
+  upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string, name?: string): void {
+    if (name) {
+      this.db.prepare(`
+        INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name, name)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(thread_id, platform) DO UPDATE SET session_id = excluded.session_id
+      `).run(threadId, platform, channelId, sessionId, projectName, name);
+    } else {
+      this.db.prepare(`
+        INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(thread_id, platform) DO UPDATE SET session_id = excluded.session_id
+      `).run(threadId, platform, channelId, sessionId, projectName);
+    }
   }
 
   getThread(threadId: string, platform: Platform): ThreadRow | null {
@@ -124,11 +150,11 @@ export class Store {
     this.db.prepare("DELETE FROM threads WHERE thread_id = ? AND platform = ?").run(threadId, platform);
   }
 
-  saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string): void {
+  saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string, inputTokens = 0, outputTokens = 0): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO messages (message_id, platform, thread_id, is_bot, content_summary)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(messageId, platform, threadId, isBot ? 1 : 0, contentSummary ?? null);
+      INSERT OR REPLACE INTO messages (message_id, platform, thread_id, is_bot, content_summary, input_tokens, output_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(messageId, platform, threadId, isBot ? 1 : 0, contentSummary ?? null, inputTokens, outputTokens);
   }
 
   getMessage(messageId: string, platform: Platform): MessageRow | null {
@@ -141,6 +167,12 @@ export class Store {
     return (this.db.prepare(
       "SELECT * FROM messages WHERE thread_id = ? AND platform = ? AND is_bot = 1 ORDER BY created_at DESC LIMIT 1"
     ).get(threadId, platform) as MessageRow | undefined) ?? null;
+  }
+
+  getMessagesByThread(threadId: string, platform: Platform): MessageRow[] {
+    return this.db.prepare(
+      "SELECT * FROM messages WHERE thread_id = ? AND platform = ? ORDER BY created_at ASC"
+    ).all(threadId, platform) as MessageRow[];
   }
 
   markPendingRestart(threadId: string, platform: Platform): void {

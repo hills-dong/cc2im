@@ -96,23 +96,21 @@ test.describe("Chat Edge Cases", () => {
     await page.goto(server.baseUrl);
     await page.waitForTimeout(2000);
 
-    // Check if there are existing sessions in sidebar
+    // Assert existing sessions exist in sidebar
     const sessionItems = page.locator(".session-item");
-    const count = await sessionItems.count();
+    await expect(sessionItems.first()).toBeVisible({ timeout: 5000 });
 
-    if (count > 0) {
-      // Click an existing session
-      await sessionItems.first().click();
-      await page.waitForTimeout(1000);
+    // Click an existing session
+    await sessionItems.first().click();
+    await page.waitForTimeout(1000);
 
-      // Should activate the session
-      await expect(sessionItems.first()).toHaveClass(/active/, { timeout: 2000 });
+    // Should activate the session
+    await expect(sessionItems.first()).toHaveClass(/active/, { timeout: 2000 });
 
-      // Main content should show something (either messages or empty state for that session)
-      const mainContent = page.locator(".main-content");
-      await expect(mainContent).toBeVisible();
+    // Main content should show something (either messages or empty state for that session)
+    const mainContent = page.locator(".main-content");
+    await expect(mainContent).toBeVisible();
 
-      await server.screenshot(page, "edge-sidebar-session-click");
-    }
+    await server.screenshot(page, "edge-sidebar-session-click");
   });
 });

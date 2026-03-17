@@ -28,7 +28,8 @@ test.describe("Chat Multi-turn", () => {
     await textarea.press("Enter");
 
     const userBubbles = page.locator(".message-wrap.user");
-    await expect(userBubbles).toHaveCount(2, { timeout: 5000 });
+    // User message must appear immediately (optimistic UI), not wait for server response
+    await expect(userBubbles).toHaveCount(2, { timeout: 500 });
 
     const secondAssistant = page.locator(".message-wrap.assistant").nth(1);
     await expect(secondAssistant).toBeVisible({ timeout: 30000 });

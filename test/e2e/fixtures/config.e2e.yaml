@@ -1,0 +1,32 @@
+claude:
+  command: /app/e2e/fixtures/mock-claude.sh
+  defaultArgs:
+    - --print
+    - --output-format
+    - stream-json
+  timeout: 30000
+  bufferInterval: 500
+
+projects:
+  - name: e2e-project
+    directory: /tmp/e2e
+    platforms:
+      web: true
+  - name: e2e-project-2
+    directory: /tmp/e2e2
+    platforms:
+      web: true
+
+discord:
+  token: ""
+
+lark:
+  appId: ""
+  appSecret: ""
+
+formatter:
+  maxMessageLength:
+    discord: 2000
+    lark: 30000
+    web: 100000
+  maxConcurrentProcesses: 2

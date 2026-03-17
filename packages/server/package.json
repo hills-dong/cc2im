@@ -9,8 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@cc2im/core": "*",

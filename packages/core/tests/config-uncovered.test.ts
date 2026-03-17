@@ -104,8 +104,8 @@ formatter:
     expect(config.projects[999].name).toBe("proj-999");
   });
 
-  // 4. platforms array with invalid platform name
-  it("converts platforms array with invalid platform name to object without validation", () => {
+  // 4. platforms with unknown platform name preserved
+  it("preserves unknown platform names in platforms object", () => {
     writeYaml(configPath, `
 discord:
   token: "t"
@@ -116,8 +116,8 @@ projects:
   - name: "proj"
     directory: "/tmp/proj"
     platforms:
-      - slack
-      - discord
+      slack: true
+      discord: true
 claude:
   command: "claude"
   defaultArgs: []
@@ -247,8 +247,8 @@ formatter:
     expect(config.discord.token).toBe("env-token");
   });
 
-  // 11. Both flat keys and nested maxMessageLength → nested preserved
-  it("preserves nested maxMessageLength when both flat and nested exist", () => {
+  // 11. Nested maxMessageLength loaded correctly
+  it("loads nested maxMessageLength values", () => {
     writeYaml(configPath, `
 discord:
   token: "t"
@@ -266,14 +266,12 @@ formatter:
     discord: 5000
     lark: 60000
     web: 200000
-  maxMessageLengthDiscord: 1000
-  maxMessageLengthLark: 2000
   maxConcurrentProcesses: 5
 `);
     const config = loadConfig(configPath);
-    // Since maxMessageLength exists and is truthy, the migration branch is skipped
     expect(config.formatter.maxMessageLength.discord).toBe(5000);
     expect(config.formatter.maxMessageLength.lark).toBe(60000);
+    expect(config.formatter.maxMessageLength.web).toBe(200000);
   });
 
   // 12. Negative maxMessageLength preserved without validation

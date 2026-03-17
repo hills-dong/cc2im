@@ -2,10 +2,10 @@ import { test as base, expect } from "@playwright/test";
 import { mkdirSync } from "fs";
 import { join } from "path";
 
-const SCREENSHOTS_DIR = join(import.meta.dirname ?? ".", "../e2e-screenshots");
+const SCREENSHOTS_DIR = join(import.meta.dirname ?? ".", "../../e2e-screenshots");
 
-// Real environment: connect to already-running server at port 8081
-const BASE_URL = "http://127.0.0.1:8081";
+// E2E_BASE_URL env var for Docker mode (http://127.0.0.1:18081), default to local dev server
+const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8081";
 
 export interface ServerFixture {
   port: number;
@@ -27,8 +27,10 @@ export const test = base.extend<{ server: ServerFixture }>({
       await page.screenshot({ path: join(SCREENSHOTS_DIR, filename), fullPage: true });
     };
 
+    const port = parseInt(new URL(BASE_URL).port || "8081", 10);
+
     await use({
-      port: 8081,
+      port,
       baseUrl: BASE_URL,
       dbPath: "", // real DB, don't expose path
       screenshot,

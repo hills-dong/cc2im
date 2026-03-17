@@ -52,13 +52,34 @@ async function handleChatSend(
   }
 
   const sessionId = payload.sessionId ?? null;
-  const threadKey = payload.threadKey ?? `web:${payload.project}:${Date.now()}`;
+  let threadKey = payload.threadKey ?? `web:${payload.project}:${Date.now()}`;
+  // If client sends a sessionId that looks like a thread_id, use it as threadKey
+  if (!payload.threadKey && sessionId && sessionId.startsWith("web:")) {
+    threadKey = sessionId;
+  }
 
   try {
+    // Save user message and create/update thread
+    const userMsgId = `web-${threadKey}-user-${Date.now()}`;
+    ctx.store.saveMessage(userMsgId, "web", threadKey, false, payload.message.slice(0, 200));
+
+    // Resolve the real Claude session ID for --resume
+    let claudeSessionId: string | null = null;
+    const existingThread = ctx.store.getThread(threadKey, "web");
+    if (existingThread && existingThread.session_id && !existingThread.session_id.startsWith("web:")) {
+      // Existing thread with a real Claude session ID — resume it
+      claudeSessionId = existingThread.session_id;
+    }
+
+    // Create thread if new (don't overwrite session_id on existing threads)
+    if (!existingThread) {
+      ctx.store.upsertThread(threadKey, "web", `web:${payload.project}`, "", payload.project, payload.message.slice(0, 50));
+    }
+
     const result = await sessionManager.invoke(
       threadKey,
       project.directory,
-      sessionId,
+      claudeSessionId,
       payload.message,
       (event: StreamEvent) => {
         // Transform raw StreamEvents into the flat format the client expects
@@ -83,13 +104,41 @@ async function handleChatSend(
       payload.model ?? project.model,
     );
 
+    // Save token usage to database
+    if (result.inputTokens > 0 || result.outputTokens > 0) {
+      ctx.store.saveTokenUsage(
+        threadKey,
+        payload.project,
+        payload.model ?? null,
+        result.inputTokens,
+        result.outputTokens,
+        result.cacheReadTokens,
+        result.cacheCreationTokens,
+      );
+    }
+
     broadcast(clients, {
       type: "chat.done",
       sessionId: threadKey,
       realSessionId: result.sessionId || null,
       result: result.text,
-      tokens: { inputTokens: 0, outputTokens: 0 },
+      tokens: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
     });
+
+    // Save assistant message and update thread with real session ID
+    const botMsgId = `web-${threadKey}-bot-${Date.now()}`;
+    ctx.store.saveMessage(botMsgId, "web", threadKey, true, result.text.slice(0, 200), result.inputTokens, result.outputTokens);
+    ctx.store.upsertThread(threadKey, "web", `web:${payload.project}`, result.sessionId || "", payload.project);
+
+    // Notify sidebar of new/updated session (deferred to next tick to avoid racing with chat.done handlers)
+    setTimeout(() => {
+      broadcast(clients, {
+        type: "session.update",
+        project: payload.project,
+        threadKey,
+        name: payload.message.slice(0, 50),
+      });
+    }, 0);
   } catch (err: unknown) {
     broadcast(clients, {
       type: "chat.error",

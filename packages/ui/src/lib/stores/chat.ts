@@ -13,6 +13,9 @@ export interface Session {
   id: string | null;
   project: string;
   messages: ChatMessage[];
+  threadKey?: string;
+  baseInputTokens?: number;
+  baseOutputTokens?: number;
 }
 
 export const currentProject = writable<string | null>(null);
@@ -104,22 +107,74 @@ on("chat.error", (event) => {
   threadKeyMap.delete(event.sessionId);
 });
 
+export async function loadSession(baseUrl: string, threadId: string, project: string): Promise<void> {
+  let existing: Session | undefined;
+  sessions.update(s => { existing = s.get(threadId); return s; });
+  if (existing && existing.messages.length > 0) return;
+
+  try {
+    const res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(threadId)}/messages`);
+    if (!res.ok) return;
+    const rows: Array<{ message_id: string; is_bot: number; content_summary: string | null; input_tokens?: number; output_tokens?: number; created_at: string }> = await res.json();
+    if (rows.length === 0) return;
+
+    const messages: ChatMessage[] = rows.map(r => ({
+      id: r.message_id,
+      role: r.is_bot ? "assistant" as const : "user" as const,
+      content: r.content_summary ?? "",
+      ...(r.is_bot && (r.input_tokens || r.output_tokens) ? { tokens: { input: r.input_tokens ?? 0, output: r.output_tokens ?? 0 } } : {}),
+    }));
+
+    // Fetch session-level token totals for historical sessions
+    let baseInputTokens = 0;
+    let baseOutputTokens = 0;
+    try {
+      const tokenRes = await fetch(`${baseUrl}/api/stats/tokens?session=${encodeURIComponent(threadId)}`);
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        baseInputTokens = tokenData.inputTokens ?? 0;
+        baseOutputTokens = tokenData.outputTokens ?? 0;
+      }
+    } catch {
+      // Silently fail
+    }
+
+    sessions.update(s => {
+      const newMap = new Map(s);
+      newMap.set(threadId, { id: threadId, project, messages, threadKey: threadId, baseInputTokens, baseOutputTokens });
+      return newMap;
+    });
+  } catch {
+    // Silently fail
+  }
+}
+
 export function sendMessage(project: string, message: string, sessionId?: string): void {
   const msgId = crypto.randomUUID();
   const sessKey = sessionId ?? `new-${project}`;
-  const threadKey = `web:${project}:${Date.now()}`;
+
+  // Reuse threadKey from existing session for multi-turn, or create new one
+  let threadKey = "";
+  sessions.update(s => {
+    const existing = s.get(sessKey);
+    threadKey = existing?.threadKey ?? `web:${project}:${Date.now()}`;
+    return s;
+  });
 
   // Map threadKey so we can correlate server responses to our local session
   threadKeyMap.set(threadKey, sessKey);
 
   sessions.update(s => {
-    if (!s.has(sessKey)) {
-      s.set(sessKey, { id: sessionId ?? null, project, messages: [] });
-    }
-    const session = s.get(sessKey)!;
-    session.messages.push({ id: msgId, role: "user", content: message });
-    session.messages.push({ id: msgId + "-reply", role: "assistant", content: "", streaming: true });
-    return s;
+    const newMap = new Map(s);
+    const existing = newMap.get(sessKey);
+    const session = existing ?? { id: sessionId ?? null, project, messages: [] };
+    const newMessages = [
+      ...session.messages,
+      { id: msgId, role: "user" as const, content: message },
+      { id: msgId + "-reply", role: "assistant" as const, content: "", streaming: true },
+    ];
+    newMap.set(sessKey, { ...session, messages: newMessages, threadKey });
+    return newMap;
   });
 
   streamBuffer = "";

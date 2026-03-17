@@ -4,9 +4,9 @@
   interface DailyRow {
     date: string;
     model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheTokens: number;
+    input: number;
+    output: number;
+    cache: number;
   }
 
   interface TokenStats {
@@ -81,15 +81,15 @@
   function chartData(daily: DailyRow[]) {
     const maxTotal = Math.max(
       1,
-      ...daily.map((d) => d.inputTokens + d.outputTokens + d.cacheTokens)
+      ...daily.map((d) => d.input + d.output + d.cache)
     );
     return daily.slice(-20).map((d) => ({
       ...d,
-      total: d.inputTokens + d.outputTokens + d.cacheTokens,
-      height: Math.round(((d.inputTokens + d.outputTokens + d.cacheTokens) / maxTotal) * CHART_HEIGHT),
-      inputH: Math.round((d.inputTokens / maxTotal) * CHART_HEIGHT),
-      outputH: Math.round((d.outputTokens / maxTotal) * CHART_HEIGHT),
-      cacheH: Math.round((d.cacheTokens / maxTotal) * CHART_HEIGHT),
+      total: d.input + d.output + d.cache,
+      height: Math.round(((d.input + d.output + d.cache) / maxTotal) * CHART_HEIGHT),
+      inputH: Math.round((d.input / maxTotal) * CHART_HEIGHT),
+      outputH: Math.round((d.output / maxTotal) * CHART_HEIGHT),
+      cacheH: Math.round((d.cache / maxTotal) * CHART_HEIGHT),
     }));
   }
 
@@ -157,10 +157,10 @@
         </div>
         <div class="chart-wrap">
           {#each [chartData(stats.daily)] as cd}
+          <div class="bar-chart">
           <svg
             width={cd.length * (BAR_WIDTH + BAR_GAP)}
             height={CHART_HEIGHT + 36}
-            class="bar-chart"
           >
             {#each cd as bar, i}
               {@const x = i * (BAR_WIDTH + BAR_GAP)}
@@ -191,6 +191,7 @@
               </text>
             {/each}
           </svg>
+          </div>
           {/each}
         </div>
       </div>
@@ -215,10 +216,10 @@
                 <tr>
                   <td class="mono">{row.date}</td>
                   <td class="mono dimmed">{row.model || "—"}</td>
-                  <td class="num">{fmtFull(row.inputTokens)}</td>
-                  <td class="num">{fmtFull(row.outputTokens)}</td>
-                  <td class="num">{fmtFull(row.cacheTokens)}</td>
-                  <td class="num total">{fmtFull(row.inputTokens + row.outputTokens + row.cacheTokens)}</td>
+                  <td class="num">{fmtFull(row.input)}</td>
+                  <td class="num">{fmtFull(row.output)}</td>
+                  <td class="num">{fmtFull(row.cache)}</td>
+                  <td class="num total">{fmtFull(row.input + row.output + row.cache)}</td>
                 </tr>
               {/each}
             </tbody>

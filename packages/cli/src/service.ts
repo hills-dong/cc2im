@@ -22,13 +22,22 @@ export function detectPlatform(): ServicePlatform {
 
 export function resolveConfigPath(explicit?: string): string {
   if (explicit) return resolve(explicit);
-  const cwdConfig = resolve("config.yaml");
-  if (existsSync(cwdConfig)) return cwdConfig;
+  // Walk up from CWD looking for config.yaml (supports monorepo workspaces)
+  let dir = resolve(".");
+  while (true) {
+    const candidate = join(dir, "config.yaml");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
   return join(homedir(), ".config", "cc2im", "config.yaml");
 }
 
 function resolveServicePaths(configPath?: string): ServicePaths {
-  const entryPath = resolve(__dirname, "index.js");
+  // Always point to dist/index.js regardless of whether we're running via tsx (src/) or node (dist/)
+  const distDir = __dirname.endsWith("/src") ? resolve(__dirname, "..", "dist") : __dirname;
+  const entryPath = resolve(distDir, "index.js");
   const resolved = resolveConfigPath(configPath);
   return {
     nodePath: process.execPath,

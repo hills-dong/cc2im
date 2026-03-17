@@ -5,13 +5,14 @@ import {
   type PlatformAdapter, type IncomingMessage, type Reaction,
 } from "@cc2im/core";
 import type { ChatInputCommandInteraction } from "discord.js";
-import { resolve, join } from "path";
+import { resolve, join, dirname } from "path";
+import { resolveConfigPath } from "./service.js";
 import { mkdtemp, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { execFile } from "child_process";
 
-const CONFIG_PATH = resolve(process.env.CC2IM_CONFIG ?? "config.yaml");
-const DB_PATH = resolve(process.env.CC2IM_DB ?? "cc2im.db");
+const CONFIG_PATH = resolveConfigPath(process.env.CC2IM_CONFIG);
+const DB_PATH = resolve(process.env.CC2IM_DB ?? join(dirname(CONFIG_PATH), "cc2im.db"));
 
 export async function main() {
   console.log("cc2im starting...");
@@ -249,8 +250,10 @@ async function handleMessage(
       ? "\n\n---\n" + activities.slice(-5).map(a => `_• ${a}_`).join("\n") + `\n${statusLine}`
       : `\n\n${statusLine}`;
     if (bufferedText) {
+      // Strip [react:emoji] lines from display during streaming
+      const displayText = bufferedText.replace(/\n?\[react:.+\]\s*$/gm, "").trimEnd();
       const maxText = maxLen - activityLog.length;
-      return bufferedText.slice(0, maxText) + activityLog;
+      return displayText.slice(0, maxText) + activityLog;
     }
     return statusLine;
   };
@@ -346,9 +349,9 @@ async function handleMessage(
       await adapter.uploadFile(msg.channelId, threadId, img.filename, img.content);
     }
 
-    // Add reactions
+    // Add reactions to the user's original message
     for (const emoji of reactions) {
-      await adapter.addReaction(threadId!, currentMessageId, emoji);
+      await adapter.addReaction(threadId!, msg.messageId, emoji);
     }
 
     // Update message record

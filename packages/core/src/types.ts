@@ -86,6 +86,12 @@ export interface StreamResultEvent {
   subtype: "success" | "error";
   result: string;
   session_id: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
 }
 
 export type StreamEvent = StreamInitEvent | StreamAssistantEvent | StreamResultEvent | { type: string; [key: string]: unknown };

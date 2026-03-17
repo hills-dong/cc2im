@@ -1,11 +1,15 @@
 import { spawn, type ChildProcess } from "child_process";
 import { createInterface } from "readline";
-import type { ClaudeConfig, FormatterConfig, StreamEvent } from "./types.js";
+import type { ClaudeConfig, FormatterConfig, StreamEvent, StreamResultEvent } from "./types.js";
 
 export interface SessionResult {
   sessionId: string;
   text: string;
   success: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 }
 
 type StreamCallback = (event: StreamEvent) => void;
@@ -115,6 +119,10 @@ export class SessionManager {
       let fullText = "";
       let stderrText = "";
       let success = false;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let cacheReadTokens = 0;
+      let cacheCreationTokens = 0;
 
       const resetTimeout = () => {
         clearTimeout(idleTimer);
@@ -156,9 +164,16 @@ export class SessionManager {
         }
 
         if (event.type === "result") {
-          success = (event as any).subtype === "success";
-          if ((event as any).result) {
-            fullText = (event as any).result;
+          const resultEvent = event as StreamResultEvent;
+          success = resultEvent.subtype === "success";
+          if (resultEvent.result) {
+            fullText = resultEvent.result;
+          }
+          if (resultEvent.usage) {
+            inputTokens = resultEvent.usage.input_tokens ?? 0;
+            outputTokens = resultEvent.usage.output_tokens ?? 0;
+            cacheReadTokens = resultEvent.usage.cache_read_input_tokens ?? 0;
+            cacheCreationTokens = resultEvent.usage.cache_creation_input_tokens ?? 0;
           }
         }
 
@@ -186,6 +201,10 @@ export class SessionManager {
             sessionId: resultSessionId,
             text: fullText,
             success: success || code === 0,
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheCreationTokens,
           });
         }
       });

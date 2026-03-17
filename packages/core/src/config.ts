@@ -23,30 +23,6 @@ export function loadConfig(path: string): AppConfig {
     parsed.lark.appSecret = process.env.LARK_APP_SECRET;
   }
 
-  // Validate and fix common config structure issues
-  for (const project of parsed.projects) {
-    if (Array.isArray(project.platforms)) {
-      // Convert ["discord"] → { discord: true }
-      const arr = project.platforms as unknown as string[];
-      project.platforms = {};
-      for (const p of arr) {
-        (project.platforms as any)[p] = true;
-      }
-      console.warn(`[config] Fixed platforms format for project "${project.name}" (array → object)`);
-    }
-  }
-
-  if (parsed.formatter && !parsed.formatter.maxMessageLength) {
-    // Support flat keys: maxMessageLengthDiscord → maxMessageLength.discord
-    const f = parsed.formatter as any;
-    parsed.formatter.maxMessageLength = {
-      discord: f.maxMessageLengthDiscord ?? 2000,
-      lark: f.maxMessageLengthLark ?? 30000,
-      web: f.maxMessageLengthWeb ?? 100000,
-    };
-    console.warn("[config] Fixed formatter.maxMessageLength format (flat → nested)");
-  }
-
   return parsed;
 }
 

@@ -27,6 +27,8 @@ export function connect(url: string): void {
     connectionStatus.set("connected");
     reconnectAttempt = 0;
     send({ type: "sync.state" });
+    // Expose for E2E testing
+    (globalThis as any).__ws = ws;
   };
 
   ws.onmessage = (e) => {

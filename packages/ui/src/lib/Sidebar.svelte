@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { currentProject, currentSessionId } from "./stores/chat.js";
+  import { on } from "./stores/connection.js";
 
   interface Project {
     name: string;
@@ -11,6 +12,10 @@
   interface Session {
     id: string;
     name: string;
+  }
+
+  function truncate(text: string, max = 27): string {
+    return text.length > max ? text.slice(0, max) + "..." : text;
   }
 
   let {
@@ -28,6 +33,15 @@
 
   onMount(async () => {
     await loadProjects();
+    on("session.update", async (event: any) => {
+      if (!event.project) return;
+      // Reload sessions for the affected project
+      const proj = projects.find(p => p.name === event.project);
+      if (proj) {
+        proj.sessions = await loadSessions(proj.name);
+        projects = [...projects]; // trigger reactivity
+      }
+    });
   });
 
   async function loadProjects() {
@@ -59,7 +73,7 @@
         const data = await res.json();
         const items = Array.isArray(data) ? data : [];
         return items.map((s: any) => ({
-          id: s.id ?? s.session_id ?? s.thread_id ?? "",
+          id: s.thread_id ?? s.id ?? s.session_id ?? "",
           name: s.name ?? "",
         }));
       }
@@ -110,8 +124,9 @@
                   class="session-item"
                   class:active={$currentProject === project.name && $currentSessionId === session.id}
                   onclick={() => onSessionSelect(project.name, session.id)}
+                  title={session.name || session.id}
                 >
-                  {session.name || session.id.slice(0, 8)}
+                  {truncate(session.name || session.id)}
                 </button>
               {/each}
               {#if project.sessions.length === 0}
@@ -126,6 +141,13 @@
 
   <div class="sidebar-bottom">
     <div class="sidebar-divider"></div>
+    <button
+      class="nav-btn"
+      class:active={currentPage === "chat"}
+      onclick={() => onPageChange("chat")}
+    >
+      💬 Chat
+    </button>
     <button
       class="nav-btn"
       class:active={currentPage === "config"}
