@@ -9,3 +9,4 @@ config.yaml
 e2e-screenshots/
 test-results/
 .claude/
+.worktrees/
