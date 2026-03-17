@@ -1,133 +1,163 @@
 import { test, expect } from "./fixtures.js";
 
-test.describe("Stats Page Extended", () => {
-  test("selecting a project with data renders bar chart", async ({ page, server }) => {
-    await page.goto(server.baseUrl);
-    await page.waitForTimeout(2000);
+/**
+ * Stats Extended E2E Tests
+ * Covers: data accuracy, API validation, time windows, project summary accuracy
+ */
 
-    const statsBtn = page.locator("button.nav-btn:has-text('Stats')");
-    await statsBtn.click();
+// Helper: navigate to Stats page
+async function goToStats(page: import("@playwright/test").Page, baseUrl: string) {
+  await page.goto(baseUrl);
+  const statsBtn = page.locator("button.nav-btn:has-text('Stats')");
+  await expect(statsBtn).toBeVisible({ timeout: 5000 });
+  await statsBtn.click();
+  await expect(page.locator("h1:has-text('Token Statistics')")).toBeVisible({ timeout: 5000 });
+}
 
-    const select = page.locator("#project-select");
-    await expect(select).toBeVisible({ timeout: 3000 });
+// Helper: wait for data to load
+async function waitForDataLoaded(page: import("@playwright/test").Page) {
+  await expect(
+    page.locator(".summary-cards, .empty-hint, .error-msg").first()
+  ).toBeVisible({ timeout: 10000 });
+}
 
-    // Select the first real project
-    const firstOption = select.locator("option").nth(1);
-    const projectName = await firstOption.getAttribute("value");
-    expect(projectName).toBeTruthy();
+// Helper: replicate the fmt function from Stats.svelte
+function fmt(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return String(n);
+}
 
-    await select.selectOption(projectName!);
-    await page.waitForTimeout(2000);
+// Helper: replicate fmtFull from Stats.svelte
+function fmtFull(n: number): string {
+  return n.toLocaleString();
+}
 
-    // Check if bar chart SVG is rendered (only if project has data)
-    const barChart = page.locator(".bar-chart");
-    const emptyHint = page.locator(".empty-hint");
+test.describe("Data Accuracy - Card Values Match API", () => {
+  // Case #11 (P0): Card values match API response
+  test("cards-values-match-api", async ({ page, server }) => {
+    // Fetch API data
+    const apiRes = await page.request.get(`${server.baseUrl}/api/stats/overview?window=24h`);
+    const apiData = await apiRes.json();
 
-    // Either bar chart or empty hint should be visible
-    const hasChart = await barChart.isVisible();
-    const hasEmpty = await emptyHint.isVisible();
-    expect(hasChart || hasEmpty).toBe(true);
+    await goToStats(page, server.baseUrl);
+    await waitForDataLoaded(page);
 
-    if (hasChart) {
-      // Verify it's an SVG element
-      await expect(barChart.locator("svg")).toBeVisible({ timeout: 3000 });
-    }
+    // If no data, summary cards may still show zeros
+    const summaryCards = page.locator(".summary-cards");
+    await expect(summaryCards).toBeVisible({ timeout: 5000 });
 
-    await server.screenshot(page, "stats-bar-chart");
-  });
+    // Input card
+    const inputCard = summaryCards.locator(".card.primary").first();
+    const inputValue = await inputCard.locator(".card-value").textContent();
+    const inputSub = await inputCard.locator(".card-sub").textContent();
+    expect(inputValue?.trim()).toBe(fmt(apiData.total.input));
+    expect(inputSub?.trim()).toBe(fmtFull(apiData.total.input));
 
-  test("selecting a project with data shows daily breakdown table", async ({ page, server }) => {
-    await page.goto(server.baseUrl);
-    await page.waitForTimeout(2000);
+    // Output card
+    const outputCard = summaryCards.locator(".card.primary").nth(1);
+    const outputValue = await outputCard.locator(".card-value").textContent();
+    const outputSub = await outputCard.locator(".card-sub").textContent();
+    expect(outputValue?.trim()).toBe(fmt(apiData.total.output));
+    expect(outputSub?.trim()).toBe(fmtFull(apiData.total.output));
 
-    const statsBtn = page.locator("button.nav-btn:has-text('Stats')");
-    await statsBtn.click();
-
-    const select = page.locator("#project-select");
-    await expect(select).toBeVisible({ timeout: 3000 });
-
-    // Select the first real project
-    const firstOption = select.locator("option").nth(1);
-    const projectName = await firstOption.getAttribute("value");
-    expect(projectName).toBeTruthy();
-
-    await select.selectOption(projectName!);
-    await page.waitForTimeout(2000);
-
-    const table = page.locator(".table-section table");
-    const emptyHint = page.locator(".empty-hint");
-
-    const hasTable = await table.isVisible();
-    const hasEmpty = await emptyHint.isVisible();
-    expect(hasTable || hasEmpty).toBe(true);
-
-    if (hasTable) {
-      // Table should have at least a header row
-      const rows = table.locator("tr");
-      const rowCount = await rows.count();
-      expect(rowCount).toBeGreaterThanOrEqual(1);
-    }
-
-    await server.screenshot(page, "stats-daily-table");
-  });
-
-  test("stats API returns empty data for nonexistent project", async ({ page, server }) => {
-    const res = await page.request.get(
-      `${server.baseUrl}/api/stats/tokens?project=nonexistent-project-xyz`
+    // Cache card
+    const cacheCard = summaryCards.locator(".card.secondary");
+    const cacheValueSm = await cacheCard.locator(".card-value-sm").textContent();
+    const cacheSub = await cacheCard.locator(".card-sub").textContent();
+    expect(cacheValueSm?.trim()).toBe(
+      `${fmt(apiData.total.cacheRead)} / ${fmt(apiData.total.cacheCreation)}`
     );
-    const data = await res.json();
+    expect(cacheSub?.trim()).toBe(
+      `${fmtFull(apiData.total.cacheRead)} / ${fmtFull(apiData.total.cacheCreation)}`
+    );
 
-    // Should still return the correct shape but with zero/empty values
-    expect(data).toHaveProperty("totalInput");
-    expect(data).toHaveProperty("totalOutput");
-    expect(data).toHaveProperty("totalCache");
-    expect(data).toHaveProperty("daily");
-    expect(data.totalInput).toBe(0);
-    expect(data.totalOutput).toBe(0);
-    expect(data.daily).toEqual([]);
+    await server.screenshot(page, "cards-api-match");
   });
 
-  test("switching between projects updates the stats display", async ({ page, server }) => {
-    await page.goto(server.baseUrl);
-    await page.waitForTimeout(2000);
+  // Case #23 (P1): Project summary values match API per-project totals
+  test("projects-summary-matches-api", async ({ page, server }) => {
+    const apiRes = await page.request.get(`${server.baseUrl}/api/stats/overview?window=24h`);
+    const apiData = await apiRes.json();
+    test.skip(apiData.projects.length === 0, "No projects in 24h window");
 
+    await goToStats(page, server.baseUrl);
+    await waitForDataLoaded(page);
+
+    const projectCards = page.locator(".project-card");
+
+    for (let i = 0; i < apiData.projects.length; i++) {
+      const proj = apiData.projects[i];
+      const card = projectCards.nth(i);
+
+      const nameText = await card.locator(".project-name").textContent();
+      expect(nameText?.trim()).toBe(proj.name);
+
+      const summaryText = await card.locator(".project-summary").textContent();
+      expect(summaryText).toContain(`in: ${fmt(proj.total.input)}`);
+      expect(summaryText).toContain(`out: ${fmt(proj.total.output)}`);
+    }
+
+    await server.screenshot(page, "projects-accuracy");
+  });
+});
+
+test.describe("State Persistence", () => {
+  // Case #40 (P1): Active tab resets to 24h on page reload
+  test("state-tab-resets-on-reload", async ({ page, server }) => {
+    await goToStats(page, server.baseUrl);
+    await waitForDataLoaded(page);
+
+    // Switch to "all" tab
+    const tabs = page.locator(".window-tabs .tab-btn");
+    await tabs.nth(2).click();
+    await waitForDataLoaded(page);
+
+    // Verify "all" is active
+    await expect(tabs.nth(2)).toHaveClass(/active/);
+
+    // Reload and re-navigate
+    await page.reload();
     const statsBtn = page.locator("button.nav-btn:has-text('Stats')");
+    await expect(statsBtn).toBeVisible({ timeout: 5000 });
     await statsBtn.click();
+    await expect(page.locator("h1:has-text('Token Statistics')")).toBeVisible({ timeout: 5000 });
 
-    const select = page.locator("#project-select");
-    await expect(select).toBeVisible({ timeout: 3000 });
+    // Default tab should be 24h again
+    const tabsAfter = page.locator(".window-tabs .tab-btn");
+    await expect(tabsAfter.nth(0)).toHaveClass(/active/);
+    await expect(tabsAfter.nth(0)).toHaveText("最近 24h");
 
-    const options = select.locator("option");
-    const optionCount = await options.count();
+    await server.screenshot(page, "state-tab-reload");
+  });
+});
 
-    // Need at least 2 real projects (plus placeholder) to test switching
-    expect(optionCount).toBeGreaterThanOrEqual(3);
+test.describe("Tabs Always Visible", () => {
+  // Case #44 (P1): Tabs always visible in any state
+  test("tabs-always-visible", async ({ page, server }) => {
+    // Test 1: tabs visible during normal data load
+    await goToStats(page, server.baseUrl);
+    await expect(page.locator(".window-tabs")).toBeVisible({ timeout: 3000 });
+    await waitForDataLoaded(page);
+    await expect(page.locator(".window-tabs")).toBeVisible();
 
-    // Select first project
-    const firstProject = await options.nth(1).getAttribute("value");
-    expect(firstProject).toBeTruthy();
-    await select.selectOption(firstProject!);
-    await page.waitForTimeout(1500);
+    // Test 2: tabs visible during error state
+    await page.route("**/api/stats/overview*", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "test error" }),
+      })
+    );
 
-    // Capture first project's card text
-    const cards = page.locator(".summary-cards .card");
-    await expect(cards.first()).toBeVisible({ timeout: 5000 });
-    const firstCardText = await page.locator(".summary-cards").innerText();
-    await server.screenshot(page, "stats-first-project");
+    // Click a tab to trigger re-fetch with mocked error
+    await page.locator(".window-tabs .tab-btn").nth(1).click();
+    await expect(page.locator(".error-msg")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".window-tabs")).toBeVisible();
 
-    // Select second project
-    const secondProject = await options.nth(2).getAttribute("value");
-    expect(secondProject).toBeTruthy();
-    await select.selectOption(secondProject!);
-    await page.waitForTimeout(1500);
+    // Tabs should still be clickable
+    await expect(page.locator(".window-tabs .tab-btn").nth(2)).toBeEnabled();
 
-    // Summary cards should still be visible after switching
-    await expect(cards.first()).toBeVisible({ timeout: 5000 });
-    const secondCardText = await page.locator(".summary-cards").innerText();
-    await server.screenshot(page, "stats-second-project");
-
-    // Verify the select value actually changed to the second project
-    const selectedValue = await select.inputValue();
-    expect(selectedValue).toBe(secondProject);
+    await server.screenshot(page, "tabs-always");
   });
 });
