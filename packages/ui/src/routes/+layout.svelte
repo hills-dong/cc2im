@@ -7,15 +7,28 @@
   import StatusBar from '$lib/components/StatusBar.svelte';
   import { SidebarProvider } from '$lib/components/ui/sidebar/index.js';
   import { connect } from '$lib/stores/connection';
+  import Onboarding from '$lib/Onboarding.svelte';
   import '../app.css';
 
   let { children } = $props();
   let isTauri = $state(false);
+  let showOnboarding = $state(false);
 
-  onMount(() => {
+  onMount(async () => {
     isTauri = '__TAURI__' in window;
     const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
     connect(`${wsProto}://${location.host}/ws`);
+
+    // Check if onboarding is needed
+    try {
+      const res = await fetch('/api/projects');
+      const projects = await res.json();
+      if (!projects || projects.length === 0) {
+        showOnboarding = true;
+      }
+    } catch {
+      showOnboarding = true;
+    }
   });
 </script>
 
@@ -44,3 +57,5 @@
     </div>
   </SidebarProvider>
 </div>
+
+<Onboarding bind:open={showOnboarding} />

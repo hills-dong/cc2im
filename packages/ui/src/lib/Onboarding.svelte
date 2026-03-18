@@ -1,16 +1,11 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+
   const TOTAL_STEPS = 5;
 
-  interface OnboardingResult {
-    claudeCommand: string;
-    projectName: string;
-    projectDirectory: string;
-    discordToken: string;
-    larkAppId: string;
-    larkAppSecret: string;
-  }
-
-  let { onComplete }: { onComplete: (result: OnboardingResult) => void } = $props();
+  let { open = $bindable(false) } = $props();
 
   let step = $state(1);
   let testResult = $state<"idle" | "testing" | "ok" | "fail">("idle");
@@ -69,69 +64,75 @@
     }
   }
 
-  function finish() {
-    onComplete({
-      claudeCommand,
-      projectName,
-      projectDirectory,
-      discordToken,
-      larkAppId,
-      larkAppSecret,
-    });
+  async function handleComplete() {
+    open = false;
+    goto('/chat');
   }
 </script>
 
-<div class="overlay">
-  <div class="wizard-card">
+<Dialog.Root bind:open closeOnOutsideClick={false} closeOnEscape={false}>
+  <Dialog.Content showCloseButton={false} class="sm:max-w-[520px] flex flex-col gap-0 p-0 overflow-hidden">
     <!-- Step indicator -->
-    <div class="step-indicator">
+    <div class="flex items-center gap-1.5 px-6 pt-5">
       {#each Array(TOTAL_STEPS) as _, i}
         <div
-          class="step-dot"
-          class:active={i + 1 === step}
-          class:done={i + 1 < step}
+          class="w-2 h-2 rounded-full transition-colors duration-200 {i + 1 === step
+            ? 'bg-primary'
+            : i + 1 < step
+              ? 'bg-green-400'
+              : 'bg-border'}"
         ></div>
       {/each}
-      <span class="step-label">{step} / {TOTAL_STEPS}</span>
+      <span class="ml-2 text-xs text-muted-foreground">{step} / {TOTAL_STEPS}</span>
     </div>
 
-    <div class="wizard-body">
+    <!-- Wizard body -->
+    <div class="px-7 py-6 overflow-y-auto flex-1">
       <!-- Step 1: Claude path -->
       {#if step === 1}
-        <h2>Detect Claude Code CLI</h2>
-        <p class="desc">
-          Enter the path to the <code>claude</code> executable. Usually just <code>claude</code>
-          if it's in your PATH.
-        </p>
-        <div class="form-group">
-          <label for="claude-cmd">Claude Command</label>
+        <Dialog.Header class="mb-5">
+          <Dialog.Title>Detect Claude Code CLI</Dialog.Title>
+          <Dialog.Description>
+            Enter the path to the <code class="text-primary text-xs font-mono">claude</code> executable.
+            Usually just <code class="text-primary text-xs font-mono">claude</code> if it's in your PATH.
+          </Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-1.5 mb-4">
+          <label for="claude-cmd" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+            Claude Command
+          </label>
           <input
             id="claude-cmd"
             type="text"
             bind:value={claudeCommand}
             placeholder="claude"
+            class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
           />
         </div>
-        <p class="hint-link">
+        <p class="text-xs text-muted-foreground mt-3">
           Don't have Claude Code installed?
-          <a href="https://docs.anthropic.com/claude-code" target="_blank" rel="noreferrer">
+          <a href="https://docs.anthropic.com/claude-code" target="_blank" rel="noreferrer" class="text-primary underline underline-offset-2 hover:opacity-80">
             Get it here
           </a>
         </p>
 
       <!-- Step 2: Verify Claude -->
       {:else if step === 2}
-        <h2>Verify Claude Code</h2>
-        <p class="desc">
-          Let's confirm <code>{claudeCommand}</code> works correctly.
-        </p>
-        <button class="btn-primary" onclick={testClaude} disabled={testResult === "testing"}>
+        <Dialog.Header class="mb-5">
+          <Dialog.Title>Verify Claude Code</Dialog.Title>
+          <Dialog.Description>
+            Let's confirm <code class="text-primary text-xs font-mono">{claudeCommand}</code> works correctly.
+          </Dialog.Description>
+        </Dialog.Header>
+        <Button onclick={testClaude} disabled={testResult === "testing"} class="mb-4">
           {testResult === "testing" ? "Testing…" : "Test Command"}
-        </button>
+        </Button>
         {#if testResult === "ok"}
-          <div class="status-msg success">Claude Code detected successfully.</div>
+          <div class="mt-4 px-3.5 py-2.5 rounded-md border border-green-400 bg-green-950/30 text-green-400 text-sm leading-relaxed">
+            Claude Code detected successfully.
+          </div>
         {:else if testResult === "fail"}
-          <div class="status-msg error">
+          <div class="mt-4 px-3.5 py-2.5 rounded-md border border-red-400 bg-red-950/30 text-red-400 text-sm leading-relaxed">
             Test failed: {testError || "Unknown error"}.<br />
             Go back and check the command path.
           </div>
@@ -139,377 +140,150 @@
 
       <!-- Step 3: Add first project -->
       {:else if step === 3}
-        <h2>Add Your First Project</h2>
-        <p class="desc">Set up a project directory that Claude will work with.</p>
-        <div class="form-group">
-          <label for="proj-name">Project Name</label>
-          <input id="proj-name" type="text" bind:value={projectName} placeholder="my-project" />
-        </div>
-        <div class="form-group">
-          <label for="proj-dir">Directory Path</label>
-          <input
-            id="proj-dir"
-            type="text"
-            bind:value={projectDirectory}
-            placeholder="/home/user/my-project"
-          />
-          <span class="field-hint">Enter the absolute path to your project directory.</span>
+        <Dialog.Header class="mb-5">
+          <Dialog.Title>Add Your First Project</Dialog.Title>
+          <Dialog.Description>Set up a project directory that Claude will work with.</Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-4">
+          <div class="space-y-1.5">
+            <label for="proj-name" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+              Project Name
+            </label>
+            <input
+              id="proj-name"
+              type="text"
+              bind:value={projectName}
+              placeholder="my-project"
+              class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
+            />
+          </div>
+          <div class="space-y-1.5">
+            <label for="proj-dir" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+              Directory Path
+            </label>
+            <input
+              id="proj-dir"
+              type="text"
+              bind:value={projectDirectory}
+              placeholder="/home/user/my-project"
+              class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
+            />
+            <span class="block text-[11px] text-muted-foreground mt-1">Enter the absolute path to your project directory.</span>
+          </div>
         </div>
 
       <!-- Step 4: Platforms -->
       {:else if step === 4}
-        <h2>Connect Platforms <span class="optional">(Optional)</span></h2>
-        <p class="desc">Connect Discord and/or Lark to receive Claude responses there. You can skip this step.</p>
-
-        <div class="platform-section">
-          <h3>Discord</h3>
-          <div class="form-group">
-            <label for="discord-tok">Bot Token</label>
-            <input
-              id="discord-tok"
-              type="password"
-              bind:value={discordToken}
-              placeholder="••••••••"
-              autocomplete="off"
-            />
+        <Dialog.Header class="mb-5">
+          <Dialog.Title>
+            Connect Platforms <span class="text-sm font-normal text-muted-foreground">(Optional)</span>
+          </Dialog.Title>
+          <Dialog.Description>
+            Connect Discord and/or Lark to receive Claude responses there. You can skip this step.
+          </Dialog.Description>
+        </Dialog.Header>
+        <div class="space-y-6">
+          <div>
+            <h3 class="text-sm font-semibold text-primary mb-3">Discord</h3>
+            <div class="space-y-1.5">
+              <label for="discord-tok" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Bot Token
+              </label>
+              <input
+                id="discord-tok"
+                type="password"
+                bind:value={discordToken}
+                placeholder="••••••••"
+                autocomplete="off"
+                class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
+              />
+            </div>
           </div>
-        </div>
-
-        <div class="platform-section">
-          <h3>Lark / Feishu</h3>
-          <div class="form-group">
-            <label for="lark-id">App ID</label>
-            <input id="lark-id" type="text" bind:value={larkAppId} placeholder="cli_xxx" />
-          </div>
-          <div class="form-group">
-            <label for="lark-sec">App Secret</label>
-            <input
-              id="lark-sec"
-              type="password"
-              bind:value={larkAppSecret}
-              placeholder="••••••••"
-              autocomplete="off"
-            />
+          <div>
+            <h3 class="text-sm font-semibold text-primary mb-3">Lark / Feishu</h3>
+            <div class="space-y-3">
+              <div class="space-y-1.5">
+                <label for="lark-id" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  App ID
+                </label>
+                <input
+                  id="lark-id"
+                  type="text"
+                  bind:value={larkAppId}
+                  placeholder="cli_xxx"
+                  class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label for="lark-sec" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  App Secret
+                </label>
+                <input
+                  id="lark-sec"
+                  type="password"
+                  bind:value={larkAppSecret}
+                  placeholder="••••••••"
+                  autocomplete="off"
+                  class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
       <!-- Step 5: Complete -->
       {:else if step === 5}
-        <h2>All Set!</h2>
-        <p class="desc">Here's a summary of your setup:</p>
-        <div class="summary">
-          <div class="summary-row">
-            <span class="summary-key">Claude Command</span>
-            <code>{claudeCommand}</code>
+        <Dialog.Header class="mb-5">
+          <Dialog.Title>All Set!</Dialog.Title>
+          <Dialog.Description>Here's a summary of your setup:</Dialog.Description>
+        </Dialog.Header>
+        <div class="rounded-lg border border-border bg-muted/20 p-4 mb-5 space-y-0">
+          <div class="flex items-baseline gap-3 py-1.5 border-b border-border/50">
+            <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Claude Command</span>
+            <code class="text-xs font-mono text-primary">{claudeCommand}</code>
           </div>
-          <div class="summary-row">
-            <span class="summary-key">Project</span>
-            <span>{projectName}</span>
+          <div class="flex items-baseline gap-3 py-1.5 border-b border-border/50">
+            <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Project</span>
+            <span class="text-sm text-foreground">{projectName}</span>
           </div>
-          <div class="summary-row">
-            <span class="summary-key">Directory</span>
-            <code>{projectDirectory}</code>
+          <div class="flex items-baseline gap-3 py-1.5 {discordToken || larkAppId ? 'border-b border-border/50' : ''}">
+            <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Directory</span>
+            <code class="text-xs font-mono text-primary">{projectDirectory}</code>
           </div>
           {#if discordToken}
-            <div class="summary-row">
-              <span class="summary-key">Discord</span>
-              <span class="configured">Configured</span>
+            <div class="flex items-baseline gap-3 py-1.5 {larkAppId ? 'border-b border-border/50' : ''}">
+              <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Discord</span>
+              <span class="text-sm text-green-400">Configured</span>
             </div>
           {/if}
           {#if larkAppId}
-            <div class="summary-row">
-              <span class="summary-key">Lark</span>
-              <span class="configured">Configured</span>
+            <div class="flex items-baseline gap-3 py-1.5">
+              <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Lark</span>
+              <span class="text-sm text-green-400">Configured</span>
             </div>
           {/if}
         </div>
-        <p class="ready-msg">You're ready to start chatting with Claude!</p>
+        <p class="text-sm text-muted-foreground italic">You're ready to start chatting with Claude!</p>
       {/if}
     </div>
 
-    <!-- Navigation -->
-    <div class="wizard-footer">
-      <div class="footer-left">
+    <!-- Navigation footer -->
+    <Dialog.Footer class="flex items-center justify-between px-7 py-4 border-t border-border mt-0">
+      <div>
         {#if step > 1}
-          <button class="btn-secondary" onclick={back}>Back</button>
-        {:else}
-          <span></span>
+          <Button variant="outline" onclick={back}>Back</Button>
         {/if}
       </div>
-      <div class="footer-right">
+      <div class="flex items-center gap-2.5">
         {#if step === 4}
-          <button class="btn-ghost" onclick={next}>Skip</button>
+          <Button variant="ghost" onclick={next}>Skip</Button>
         {/if}
         {#if step < TOTAL_STEPS}
-          <button class="btn-primary" onclick={next} disabled={!canProceed()}>Next</button>
+          <Button onclick={next} disabled={!canProceed()}>Next</Button>
         {:else}
-          <button class="btn-primary" onclick={finish}>Start Chatting</button>
+          <Button onclick={handleComplete}>Start Chatting</Button>
         {/if}
       </div>
-    </div>
-  </div>
-</div>
-
-<style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(13, 13, 26, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 500;
-    backdrop-filter: blur(2px);
-  }
-
-  .wizard-card {
-    background: var(--bg-sidebar);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    width: 520px;
-    max-width: calc(100vw - 40px);
-    max-height: calc(100vh - 60px);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-  }
-
-  .step-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 20px 24px 0;
-  }
-
-  .step-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    transition: background 0.2s;
-  }
-
-  .step-dot.active {
-    background: var(--accent);
-  }
-
-  .step-dot.done {
-    background: #4ade80;
-  }
-
-  .step-label {
-    margin-left: 8px;
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .wizard-body {
-    padding: 24px 28px;
-    overflow-y: auto;
-    flex: 1;
-  }
-
-  .wizard-body h2 {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 10px;
-  }
-
-  .desc {
-    color: var(--text-secondary);
-    font-size: 13px;
-    margin-bottom: 22px;
-    line-height: 1.6;
-  }
-
-  .form-group {
-    margin-bottom: 16px;
-  }
-
-  .form-group label {
-    display: block;
-    font-size: 11px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 5px;
-  }
-
-  .form-group input {
-    width: 100%;
-    background: #0f3460;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 9px 12px;
-    color: var(--text-primary);
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-
-  .form-group input:focus {
-    border-color: var(--accent);
-  }
-
-  .field-hint {
-    font-size: 11px;
-    color: var(--text-secondary);
-    margin-top: 4px;
-    display: block;
-  }
-
-  .hint-link {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 12px;
-  }
-
-  .status-msg {
-    margin-top: 16px;
-    padding: 10px 14px;
-    border-radius: 6px;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .status-msg.success {
-    background: #1a3a2a;
-    border: 1px solid #4ade80;
-    color: #4ade80;
-  }
-
-  .status-msg.error {
-    background: #3a1a1a;
-    border: 1px solid #f87171;
-    color: #f87171;
-  }
-
-  .platform-section {
-    margin-bottom: 22px;
-  }
-
-  .platform-section h3 {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--accent);
-    margin-bottom: 10px;
-  }
-
-  .optional {
-    font-size: 13px;
-    font-weight: 400;
-    color: var(--text-secondary);
-  }
-
-  .summary {
-    background: #0d0d1a;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 20px;
-  }
-
-  .summary-row {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(42, 42, 78, 0.5);
-  }
-
-  .summary-row:last-child {
-    border-bottom: none;
-  }
-
-  .summary-key {
-    font-size: 11px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    min-width: 130px;
-  }
-
-  .summary-row code {
-    font-size: 12px;
-    color: var(--accent);
-  }
-
-  .configured {
-    color: #4ade80;
-    font-size: 13px;
-  }
-
-  .ready-msg {
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-style: italic;
-  }
-
-  .wizard-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 28px 20px;
-    border-top: 1px solid var(--border);
-  }
-
-  .footer-right {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #0d0d1a;
-    border: none;
-    border-radius: 5px;
-    padding: 9px 22px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    opacity: 0.85;
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  .btn-secondary {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 8px 18px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
-  }
-
-  .btn-secondary:hover {
-    border-color: var(--text-secondary);
-    color: var(--text-primary);
-  }
-
-  .btn-ghost {
-    background: transparent;
-    color: var(--text-secondary);
-    border: none;
-    padding: 8px 12px;
-    font-size: 13px;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
-  .btn-ghost:hover {
-    color: var(--text-primary);
-  }
-</style>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
