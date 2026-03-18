@@ -18,8 +18,6 @@ export interface Session {
   baseOutputTokens?: number;
 }
 
-export const currentProject = writable<string | null>(null);
-export const currentSessionId = writable<string | null>(null);
 export const sessions = writable<Map<string, Session>>(new Map());
 
 let streamBuffer = "";
