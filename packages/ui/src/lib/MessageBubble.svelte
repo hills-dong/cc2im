@@ -1,20 +1,19 @@
 <script lang="ts">
-  import { marked } from "marked";
-  import hljs from "highlight.js";
-  import type { ChatMessage } from "./stores/chat.js";
+  import { marked } from 'marked';
+  import hljs from 'highlight.js';
+  import { Badge } from '$lib/components/ui/badge';
+  import type { ChatMessage } from './stores/chat.js';
 
   let { message }: { message: ChatMessage } = $props();
 
   function renderMarkdown(content: string): string {
-    if (!content) return "";
-    // Use marked for markdown parsing
+    if (!content) return '';
     const html = marked.parse(content, { async: false }) as string;
     return html;
   }
 
-  // After rendering, highlight code blocks
   function highlightCode(node: HTMLElement) {
-    node.querySelectorAll("pre code").forEach((block) => {
+    node.querySelectorAll('pre code').forEach((block) => {
       hljs.highlightElement(block as HTMLElement);
     });
   }
@@ -22,85 +21,40 @@
   let renderedHtml = $derived(renderMarkdown(message.content));
 </script>
 
-<div class="message-wrap" class:user={message.role === "user"} class:assistant={message.role === "assistant"}>
-  <div class="bubble" use:highlightCode>
-    {#if message.role === "user"}
-      <div class="content">{message.content}</div>
+<div
+  class={[
+    'flex flex-col mb-4',
+    message.role === 'user' ? 'items-end' : 'items-start',
+  ].join(' ')}
+>
+  <div
+    class={[
+      'max-w-[80%] rounded-xl px-3.5 py-2.5 leading-relaxed break-words',
+      message.role === 'user'
+        ? 'bg-primary/10 rounded-br-sm'
+        : 'bg-card border border-border rounded-bl-sm',
+    ].join(' ')}
+    use:highlightCode
+  >
+    {#if message.role === 'user'}
+      <div class="text-sm whitespace-pre-wrap">{message.content}</div>
     {:else}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="content markdown">{@html renderedHtml}</div>
+      <div class="prose prose-sm dark:prose-invert max-w-none text-sm">{@html renderedHtml}</div>
       {#if message.streaming}
-        <span class="cursor">▋</span>
+        <span class="inline-block animate-pulse text-primary ml-0.5">▋</span>
       {/if}
     {/if}
   </div>
+
   {#if message.tokens}
-    <div class="token-info">
-      in: {message.tokens.input} / out: {message.tokens.output}
+    <div class="flex gap-1 mt-1 px-1">
+      <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4">
+        in: {message.tokens.input}
+      </Badge>
+      <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4">
+        out: {message.tokens.output}
+      </Badge>
     </div>
   {/if}
 </div>
-
-<style>
-  .message-wrap {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 16px;
-  }
-
-  .message-wrap.user {
-    align-items: flex-end;
-  }
-
-  .message-wrap.assistant {
-    align-items: flex-start;
-  }
-
-  .bubble {
-    max-width: 80%;
-    padding: 10px 14px;
-    border-radius: 12px;
-    word-break: break-word;
-    line-height: 1.6;
-  }
-
-  .user .bubble {
-    background: var(--bg-user-msg);
-    color: var(--text-primary);
-    border-radius: 12px 12px 2px 12px;
-  }
-
-  .assistant .bubble {
-    background: #222240;
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    border-radius: 12px 12px 12px 2px;
-  }
-
-  .content {
-    white-space: pre-wrap;
-  }
-
-  .content.markdown {
-    white-space: normal;
-  }
-
-  .cursor {
-    display: inline-block;
-    animation: blink 1s step-end infinite;
-    color: var(--accent);
-    margin-left: 2px;
-  }
-
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-  }
-
-  .token-info {
-    font-size: 11px;
-    color: var(--text-secondary);
-    margin-top: 4px;
-    padding: 0 4px;
-  }
-</style>
