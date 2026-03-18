@@ -1,12 +1,9 @@
-import { defineConfig } from "vite";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  plugins: [svelte()],
-  build: {
-    outDir: "dist",
-  },
+  plugins: [sveltekit()],
   test: {
-    include: ["tests/**/*.test.ts"],
-  },
+    include: ['tests/**/*.test.ts']
+  }
 });
