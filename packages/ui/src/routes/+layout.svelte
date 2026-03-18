@@ -32,7 +32,7 @@
   });
 </script>
 
-<ModeWatcher />
+<ModeWatcher defaultMode="dark" />
 <Toaster />
 
 <div class="flex flex-col h-screen">
