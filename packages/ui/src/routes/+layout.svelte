@@ -2,8 +2,10 @@
   import { onMount } from 'svelte';
   import { ModeWatcher } from 'mode-watcher';
   import { Toaster } from '$lib/components/ui/sonner';
+  import AppSidebar from '$lib/components/AppSidebar.svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import StatusBar from '$lib/components/StatusBar.svelte';
+  import { SidebarProvider } from '$lib/components/ui/sidebar/index.js';
   import { connect } from '$lib/stores/connection';
   import '../app.css';
 
@@ -24,18 +26,21 @@
   {#if isTauri}
     <div class="h-8 bg-sidebar flex items-center px-3 text-xs text-sidebar-foreground" data-tauri-drag-region>
       <span class="font-semibold">cc2im</span>
-      <div class="ml-auto">
-        <ThemeToggle />
-      </div>
     </div>
   {/if}
 
-  <div class="flex flex-1 overflow-hidden">
-    <!-- Sidebar will be added in Task 5 -->
-    <main class="flex-1 flex flex-col overflow-hidden">
-      {@render children()}
-    </main>
-  </div>
-
-  <StatusBar />
+  <SidebarProvider class="flex flex-1 overflow-hidden min-h-0">
+    <AppSidebar />
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="flex h-10 items-center gap-2 border-b border-border px-4">
+        <div class="ml-auto">
+          <ThemeToggle />
+        </div>
+      </header>
+      <main class="flex-1 flex flex-col overflow-hidden">
+        {@render children()}
+      </main>
+      <StatusBar />
+    </div>
+  </SidebarProvider>
 </div>
