@@ -350,7 +350,7 @@ async function handleMessage(
 
   let bufferedText = "";
   const activities: string[] = []; // recent activity log
-  const flushInterval = 3000; // 3 seconds
+  const flushInterval = msg.platform === "web" ? 100 : 3000;
   const startTime = Date.now();
   let lastAskQuestions: AskQuestion[] | null = null; // intercepted AskUserQuestion
 
