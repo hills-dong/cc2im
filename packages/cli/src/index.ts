@@ -315,6 +315,9 @@ async function handleMessage(
     );
   }
 
+  // Save user message to database (Web needs this for persistence; harmless for Discord)
+  store.saveMessage(msg.messageId, msg.platform, threadId, false, msg.content.slice(0, 200));
+
   // Get existing session for this thread
   const existingSessionId = router.getSessionId(threadId, msg.platform);
 
@@ -452,7 +455,11 @@ async function handleMessage(
     );
 
     // Save session mapping
-    store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, msg.userName);
+    // Use first message content as thread name for web, user's name for IM platforms
+    const threadName = msg.platform === "web"
+      ? msg.content.replace(/\n/g, " ").slice(0, 50) || "New conversation"
+      : msg.userName;
+    store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, threadName);
 
     // If AskUserQuestion was intercepted, send questions to user and wait for reply
     if (lastAskQuestions) {
