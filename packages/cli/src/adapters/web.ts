@@ -233,6 +233,11 @@ export class WebAdapter implements PlatformAdapter {
     this.broadcast({ type: "chat.done", threadId, tokens });
   }
 
+  /** Notify sidebar of new/updated session */
+  sendSessionUpdate(project: string, threadId: string, name: string): void {
+    this.broadcast({ type: "session.update", project, threadKey: threadId, name });
+  }
+
   /** Send error signal (called when handleMessage throws) */
   sendError(threadId: string, error: string): void {
     this.broadcast({ type: "chat.error", threadId, error: { code: "INVOKE_ERROR", message: error } });

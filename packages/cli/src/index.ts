@@ -145,15 +145,18 @@ export async function main(options?: MainOptions) {
       const wa = webAdapter;
       adapter.onMessage(async (msg) => {
         const threadId = msg.threadId ?? msg.channelId;
+        const project = router.getProject(msg.channelId, msg.platform);
         try {
           await handleMessage(msg, adapter, router, sessionManager, formatter, store, config);
-          // Send done with token stats after handleMessage completes
           const tokens = store.getSessionTokens(threadId);
           wa.sendDone(threadId, tokens);
         } catch (err) {
           console.error("Error handling web message:", err);
           wa.sendError(threadId, err instanceof Error ? err.message : String(err));
         }
+        // Notify sidebar of new/updated session
+        const thread = store.getThread(threadId, "web");
+        wa.sendSessionUpdate(project?.name ?? "", threadId, thread?.name ?? "");
       });
     } else {
       adapter.onMessage(async (msg) => {
