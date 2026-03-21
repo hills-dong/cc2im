@@ -66,78 +66,96 @@ export class Store {
     this.migrate();
   }
 
+  private getSchemaVersion(): number {
+    try {
+      const row = this.db.prepare("SELECT version FROM schema_version LIMIT 1").get() as { version: number } | undefined;
+      return row?.version ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private setSchemaVersion(version: number): void {
+    this.db.exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
+    this.db.exec("DELETE FROM schema_version");
+    this.db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
+  }
+
   private migrate(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS threads (
-        thread_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        channel_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'active',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (thread_id, platform)
-      );
+    const version = this.getSchemaVersion();
 
-      CREATE TABLE IF NOT EXISTS messages (
-        message_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        thread_id TEXT NOT NULL,
-        is_bot BOOLEAN NOT NULL DEFAULT FALSE,
-        content_summary TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (message_id, platform)
-      );
+    // v0 → v1: initial schema
+    if (version < 1) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS threads (
+          thread_id TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          project_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          name TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (thread_id, platform)
+        );
 
-      CREATE TABLE IF NOT EXISTS pending_restarts (
-        thread_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (thread_id, platform)
-      );
+        CREATE TABLE IF NOT EXISTS messages (
+          message_id TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          thread_id TEXT NOT NULL,
+          is_bot BOOLEAN NOT NULL DEFAULT FALSE,
+          content_summary TEXT,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          cache_read_tokens INTEGER DEFAULT 0,
+          cache_creation_tokens INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (message_id, platform)
+        );
 
-      CREATE TABLE IF NOT EXISTS token_usage (
-        id INTEGER PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        model TEXT,
-        input_tokens INTEGER DEFAULT 0,
-        output_tokens INTEGER DEFAULT 0,
-        cache_read_tokens INTEGER DEFAULT 0,
-        cache_creation_tokens INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+        CREATE TABLE IF NOT EXISTS pending_restarts (
+          thread_id TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (thread_id, platform)
+        );
 
-    // Add status column to existing databases
-    try {
-      this.db.exec("ALTER TABLE threads ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
-    } catch {
-      // Column already exists
+        CREATE TABLE IF NOT EXISTS token_usage (
+          id INTEGER PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          project_name TEXT NOT NULL,
+          model TEXT,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          cache_read_tokens INTEGER DEFAULT 0,
+          cache_creation_tokens INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Compat: add columns that may be missing in pre-versioned databases
+      const addColumnIfMissing = (table: string, column: string, def: string) => {
+        try { this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`); } catch { /* already exists */ }
+      };
+      addColumnIfMissing("threads", "status", "TEXT NOT NULL DEFAULT 'active'");
+      addColumnIfMissing("threads", "name", "TEXT");
+      addColumnIfMissing("messages", "input_tokens", "INTEGER DEFAULT 0");
+      addColumnIfMissing("messages", "output_tokens", "INTEGER DEFAULT 0");
+      addColumnIfMissing("messages", "cache_read_tokens", "INTEGER DEFAULT 0");
+      addColumnIfMissing("messages", "cache_creation_tokens", "INTEGER DEFAULT 0");
     }
 
-    // Add name column to existing databases
-    try {
-      this.db.exec("ALTER TABLE threads ADD COLUMN name TEXT");
-    } catch {
-      // Column already exists
+    // v1 → v2: add indexes for query performance
+    if (version < 2) {
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, platform);
+        CREATE INDEX IF NOT EXISTS idx_token_usage_session ON token_usage(session_id);
+        CREATE INDEX IF NOT EXISTS idx_token_usage_project ON token_usage(project_name, created_at);
+        CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_name, status);
+      `);
     }
 
-    // Add token columns to messages table
-    try {
-      this.db.exec("ALTER TABLE messages ADD COLUMN input_tokens INTEGER DEFAULT 0");
-      this.db.exec("ALTER TABLE messages ADD COLUMN output_tokens INTEGER DEFAULT 0");
-    } catch {
-      // Columns already exist
-    }
-
-    // Add cache token columns to messages table
-    try {
-      this.db.exec("ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER DEFAULT 0");
-      this.db.exec("ALTER TABLE messages ADD COLUMN cache_creation_tokens INTEGER DEFAULT 0");
-    } catch {
-      // Columns already exist
-    }
+    this.setSchemaVersion(2);
   }
 
   upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string, name?: string): void {
@@ -168,15 +186,36 @@ export class Store {
     ).run(status, threadId, platform);
   }
 
-  archiveThread(threadId: string): void {
-    this.db.prepare(
-      "UPDATE threads SET status = 'archived' WHERE thread_id = ?"
-    ).run(threadId);
+  archiveThread(threadId: string, platform?: Platform): void {
+    if (platform) {
+      this.db.prepare(
+        "UPDATE threads SET status = 'archived' WHERE thread_id = ? AND platform = ?"
+      ).run(threadId, platform);
+    } else {
+      // Fallback: archive across all platforms (used by web API which has no platform context)
+      this.db.prepare(
+        "UPDATE threads SET status = 'archived' WHERE thread_id = ?"
+      ).run(threadId);
+    }
   }
 
   deleteThread(threadId: string, platform: Platform): void {
+    // Look up the session_id before deleting so we can clean up token_usage
+    const thread = this.getThread(threadId, platform);
     this.db.prepare("DELETE FROM messages WHERE thread_id = ? AND platform = ?").run(threadId, platform);
     this.db.prepare("DELETE FROM threads WHERE thread_id = ? AND platform = ?").run(threadId, platform);
+    // Clean up token_usage for this session (by session_id or threadId as fallback key)
+    if (thread?.session_id) {
+      // Only delete if no other threads still reference this session
+      const remaining = this.db.prepare(
+        "SELECT 1 FROM threads WHERE session_id = ? LIMIT 1"
+      ).get(thread.session_id);
+      if (!remaining) {
+        this.db.prepare("DELETE FROM token_usage WHERE session_id = ?").run(thread.session_id);
+      }
+    }
+    // Also clean up token_usage keyed by threadId (web sessions before real session_id assigned)
+    this.db.prepare("DELETE FROM token_usage WHERE session_id = ?").run(threadId);
   }
 
   saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string, inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0): void {
@@ -287,27 +326,37 @@ export class Store {
   }
 
   getOverviewTokens(since: string | null): OverviewTokenRow[] {
+    // Two separate JOINs to handle the session_id duality:
+    // - ts1: matches by real Claude session_id (grouped to avoid row multiplication)
+    // - ts2: matches by thread_id (for web sessions stored with threadKey before real session_id)
+    // COALESCE picks whichever matched, preferring ts1 (real session_id)
     const sql = `
       SELECT
         tu.project_name AS projectName,
         tu.session_id AS sessionId,
-        ts.platform,
-        ts.sessionName,
-        ts.sessionCreatedAt,
+        COALESCE(ts1.platform, ts2.platform) AS platform,
+        COALESCE(ts1.sessionName, ts2.sessionName) AS sessionName,
+        COALESCE(ts1.sessionCreatedAt, ts2.sessionCreatedAt) AS sessionCreatedAt,
         COALESCE(SUM(tu.input_tokens), 0) AS inputTokens,
         COALESCE(SUM(tu.output_tokens), 0) AS outputTokens,
         COALESCE(SUM(tu.cache_read_tokens), 0) AS cacheReadTokens,
         COALESCE(SUM(tu.cache_creation_tokens), 0) AS cacheCreationTokens
       FROM token_usage tu
       LEFT JOIN (
-        SELECT thread_id,
-               session_id,
+        SELECT session_id,
                MIN(platform) AS platform,
                MIN(name) AS sessionName,
                MIN(created_at) AS sessionCreatedAt
         FROM threads
-        GROUP BY thread_id
-      ) ts ON ts.session_id = tu.session_id OR ts.thread_id = tu.session_id
+        GROUP BY session_id
+      ) ts1 ON ts1.session_id = tu.session_id
+      LEFT JOIN (
+        SELECT thread_id,
+               platform,
+               name AS sessionName,
+               created_at AS sessionCreatedAt
+        FROM threads
+      ) ts2 ON ts2.thread_id = tu.session_id AND ts1.session_id IS NULL
       WHERE (? IS NULL OR tu.created_at >= ?)
       GROUP BY tu.project_name, tu.session_id
       ORDER BY tu.project_name, SUM(tu.input_tokens + tu.output_tokens) DESC
