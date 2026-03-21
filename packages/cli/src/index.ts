@@ -318,8 +318,17 @@ async function handleMessage(
   // Save user message to database (Web needs this for persistence; harmless for Discord)
   store.saveMessage(msg.messageId, msg.platform, threadId, false, msg.content.slice(0, 200));
 
+  // Create thread record immediately so the sidebar shows it while Claude is thinking
+  const threadName = msg.platform === "web"
+    ? msg.content.replace(/\n/g, " ").slice(0, 50) || "New conversation"
+    : msg.userName;
+  const existingThread = store.getThread(threadId, msg.platform);
+  if (!existingThread) {
+    store.upsertThread(threadId, msg.platform, msg.channelId, "", project.name, threadName);
+  }
+
   // Get existing session for this thread
-  const existingSessionId = router.getSessionId(threadId, msg.platform);
+  const existingSessionId = existingThread?.session_id || null;
 
   // Send initial indicator: "queued" if thread is busy, "thinking" otherwise
   const threadKey = `${msg.platform}:${threadId}`;
@@ -454,11 +463,7 @@ async function handleMessage(
       project.model,
     );
 
-    // Save session mapping
-    // Use first message content as thread name for web, user's name for IM platforms
-    const threadName = msg.platform === "web"
-      ? msg.content.replace(/\n/g, " ").slice(0, 50) || "New conversation"
-      : msg.userName;
+    // Update thread with real Claude session ID (threadName already set on creation)
     store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, threadName);
 
     // If AskUserQuestion was intercepted, send questions to user and wait for reply
