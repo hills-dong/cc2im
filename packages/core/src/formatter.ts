@@ -87,25 +87,18 @@ export class Formatter {
   }
 
   extractReactions(text: string): ReactionResult {
-    const lines = text.split("\n");
     const reactions: string[] = [];
-    const reactionPattern = /^\[react:(.+)\]$/;
-
-    let lastContentLine = lines.length;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const trimmed = lines[i].trim();
-      if (trimmed === "") continue;
-      const match = trimmed.match(reactionPattern);
-      if (match) {
-        reactions.unshift(match[1]);
-        lastContentLine = i;
-      } else {
-        break;
-      }
+    // Extract all [react:emoji] patterns from the end of text (standalone lines or inline at line end)
+    let cleaned = text;
+    const inlinePattern = /\s*\[react:(.+?)\]\s*$/;
+    // Repeatedly strip [react:...] from the end
+    let match: RegExpMatchArray | null;
+    while ((match = cleaned.match(inlinePattern)) !== null) {
+      reactions.unshift(match[1]);
+      cleaned = cleaned.slice(0, match.index!).trimEnd();
     }
 
-    const cleanText = lines.slice(0, lastContentLine).join("\n").trimEnd();
-    return { cleanText, reactions };
+    return { cleanText: cleaned, reactions };
   }
 
   /** Extract image file paths from text and return them as attachments */

@@ -1,11 +1,22 @@
 import { writable } from "svelte/store";
 import { on, send } from "./connection.js";
 
+function uuid(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for non-secure contexts (HTTP)
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  tokens?: { input: number; output: number };
+  tokens?: { input: number; output: number; cacheRead: number; cacheCreation: number };
   streaming?: boolean;
 }
 
@@ -16,6 +27,8 @@ export interface Session {
   threadKey?: string;
   baseInputTokens?: number;
   baseOutputTokens?: number;
+  baseCacheReadTokens?: number;
+  baseCacheCreationTokens?: number;
 }
 
 export const sessions = writable<Map<string, Session>>(new Map());
@@ -62,16 +75,26 @@ on("chat.done", (event) => {
           tokens: {
             input: event.tokens?.inputTokens ?? 0,
             output: event.tokens?.outputTokens ?? 0,
+            cacheRead: event.tokens?.cacheReadTokens ?? 0,
+            cacheCreation: event.tokens?.cacheCreationTokens ?? 0,
           },
         };
         const newMessages = [...session.messages.slice(0, -1), updated];
+        const realId = event.realSessionId ?? session.id;
         const newSession = {
           ...session,
           messages: newMessages,
-          id: event.realSessionId ?? session.id,
+          id: realId,
         };
         const newMap = new Map(s);
         newMap.set(sessKey, newSession);
+        // Also store under the real session ID and threadKey so the session page can find it after navigation
+        if (realId && realId !== sessKey) {
+          newMap.set(realId, newSession);
+        }
+        if (session.threadKey && session.threadKey !== sessKey) {
+          newMap.set(session.threadKey, newSession);
+        }
         return newMap;
       }
     }
@@ -120,18 +143,22 @@ export async function loadSession(baseUrl: string, threadId: string, project: st
       id: r.message_id,
       role: r.is_bot ? "assistant" as const : "user" as const,
       content: r.content_summary ?? "",
-      ...(r.is_bot && (r.input_tokens || r.output_tokens) ? { tokens: { input: r.input_tokens ?? 0, output: r.output_tokens ?? 0 } } : {}),
+      ...(r.is_bot && (r.input_tokens || r.output_tokens) ? { tokens: { input: r.input_tokens ?? 0, output: r.output_tokens ?? 0, cacheRead: r.cache_read_tokens ?? 0, cacheCreation: r.cache_creation_tokens ?? 0 } } : {}),
     }));
 
     // Fetch session-level token totals for historical sessions
     let baseInputTokens = 0;
     let baseOutputTokens = 0;
+    let baseCacheReadTokens = 0;
+    let baseCacheCreationTokens = 0;
     try {
       const tokenRes = await fetch(`${baseUrl}/api/stats/tokens?session=${encodeURIComponent(threadId)}`);
       if (tokenRes.ok) {
         const tokenData = await tokenRes.json();
         baseInputTokens = tokenData.inputTokens ?? 0;
         baseOutputTokens = tokenData.outputTokens ?? 0;
+        baseCacheReadTokens = tokenData.cacheReadTokens ?? 0;
+        baseCacheCreationTokens = tokenData.cacheCreationTokens ?? 0;
       }
     } catch {
       // Silently fail
@@ -139,16 +166,19 @@ export async function loadSession(baseUrl: string, threadId: string, project: st
 
     sessions.update(s => {
       const newMap = new Map(s);
-      newMap.set(threadId, { id: threadId, project, messages, threadKey: threadId, baseInputTokens, baseOutputTokens });
+      newMap.set(threadId, { id: threadId, project, messages, threadKey: threadId, baseInputTokens, baseOutputTokens, baseCacheReadTokens, baseCacheCreationTokens });
       return newMap;
     });
+
+    // Subscribe to this thread's events so we receive any in-progress or future messages
+    send({ type: "chat.subscribe", threadKey: threadId });
   } catch {
     // Silently fail
   }
 }
 
 export function sendMessage(project: string, message: string, sessionId?: string): void {
-  const msgId = crypto.randomUUID();
+  const msgId = uuid();
   const sessKey = sessionId ?? `new-${project}`;
 
   // Reuse threadKey from existing session for multi-turn, or create new one
@@ -176,5 +206,6 @@ export function sendMessage(project: string, message: string, sessionId?: string
   });
 
   streamBuffer = "";
+  send({ type: "chat.subscribe", threadKey });
   send({ type: "chat.send", project, sessionId, message, threadKey });
 }

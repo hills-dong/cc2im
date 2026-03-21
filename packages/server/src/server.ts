@@ -1,5 +1,5 @@
 import http from "http";
-import { readFileSync, existsSync } from "fs";
+import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { loadConfig, SessionManager } from "@cc2im/core";
@@ -17,6 +17,8 @@ export interface ServerOptions {
   dbPath: string;
   staticDir?: string;
   skipAuth?: boolean;
+  store?: Store;
+  sessionManager?: SessionManager;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -34,7 +36,6 @@ function serveStatic(
   staticDir: string,
   urlPath: string,
 ): void {
-  // Resolve to a file path, fallback to index.html for SPA
   let filePath = resolve(staticDir, urlPath === "/" ? "index.html" : "." + urlPath);
   // Prevent path traversal: ensure resolved path stays within staticDir
   if (!filePath.startsWith(resolve(staticDir) + "/") && filePath !== resolve(staticDir, "index.html")) {
@@ -42,24 +43,36 @@ function serveStatic(
     res.end("Forbidden");
     return;
   }
-  const ext = extname(filePath);
-  const mime = MIME_TYPES[ext] ?? "application/octet-stream";
 
+  // Try the exact file first, then SPA fallback to index.html
+  let target: string;
   try {
-    const content = readFileSync(filePath);
-    res.writeHead(200, { "Content-Type": mime });
-    res.end(content);
-  } catch {
-    // SPA fallback: serve index.html
-    try {
-      const indexContent = readFileSync(join(staticDir, "index.html"));
-      res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(indexContent);
-    } catch {
-      res.writeHead(404);
-      res.end("Not found");
+    if (existsSync(filePath) && statSync(filePath).isFile()) {
+      target = filePath;
+    } else {
+      target = join(staticDir, "index.html");
     }
+  } catch {
+    target = join(staticDir, "index.html");
   }
+
+  if (!existsSync(target)) {
+    res.writeHead(404);
+    res.end("Not found");
+    return;
+  }
+
+  const ext = extname(target);
+  const mime = MIME_TYPES[ext] ?? "application/octet-stream";
+  res.writeHead(200, { "Content-Type": mime });
+  createReadStream(target)
+    .on("error", () => {
+      if (!res.headersSent) {
+        res.writeHead(500);
+      }
+      res.end();
+    })
+    .pipe(res);
 }
 
 export function createServer(options: ServerOptions): Promise<http.Server> {
@@ -73,7 +86,7 @@ export function createServer(options: ServerOptions): Promise<http.Server> {
   }
 
   const config = loadConfig(configPath);
-  const store = new Store(dbPath);
+  const store = options.store ?? new Store(dbPath);
 
   const ctx: ApiContext = { config, configPath, store };
 
@@ -99,7 +112,7 @@ export function createServer(options: ServerOptions): Promise<http.Server> {
     }
   });
 
-  const sessionManager = new SessionManager(config.claude, config.formatter);
+  const sessionManager = options.sessionManager ?? new SessionManager(config.claude, config.formatter);
   attachWebSocket(server, { config, store, sessionManager, skipAuth: options.skipAuth });
 
   return new Promise((resolve, reject) => {

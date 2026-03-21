@@ -33,9 +33,20 @@ function broadcast(clients: Set<WebSocket>, msg: unknown): void {
   }
 }
 
+function sendToSubscribers(subscriptions: Map<string, Set<WebSocket>>, threadKey: string, msg: unknown): void {
+  const subs = subscriptions.get(threadKey);
+  if (subs) {
+    const data = JSON.stringify(msg);
+    for (const client of subs) {
+      if (client.readyState === WebSocket.OPEN) client.send(data);
+    }
+  }
+}
+
 async function handleChatSend(
   ws: WebSocket,
   clients: Set<WebSocket>,
+  subscriptions: Map<string, Set<WebSocket>>,
   ctx: WsContext,
   payload: { project: string; message: string; sessionId?: string; model?: string; threadKey?: string },
 ): Promise<void> {
@@ -57,6 +68,10 @@ async function handleChatSend(
   if (!payload.threadKey && sessionId && sessionId.startsWith("web:")) {
     threadKey = sessionId;
   }
+
+  // Auto-subscribe sender to this thread's events
+  if (!subscriptions.has(threadKey)) subscriptions.set(threadKey, new Set());
+  subscriptions.get(threadKey)!.add(ws);
 
   try {
     // Save user message and create/update thread
@@ -88,7 +103,7 @@ async function handleChatSend(
           if (msg?.content) {
             for (const block of msg.content) {
               if (block.type === "text" && block.text) {
-                broadcast(clients, {
+                sendToSubscribers(subscriptions, threadKey, {
                   type: "chat.stream",
                   sessionId: threadKey,
                   contentType: "text",
@@ -104,10 +119,10 @@ async function handleChatSend(
       payload.model ?? project.model,
     );
 
-    // Save token usage to database
+    // Save token usage to database (prefer real Claude session ID for JOIN with threads table)
     if (result.inputTokens > 0 || result.outputTokens > 0) {
       ctx.store.saveTokenUsage(
-        threadKey,
+        result.sessionId || threadKey,
         payload.project,
         payload.model ?? null,
         result.inputTokens,
@@ -117,17 +132,17 @@ async function handleChatSend(
       );
     }
 
-    broadcast(clients, {
+    sendToSubscribers(subscriptions, threadKey, {
       type: "chat.done",
       sessionId: threadKey,
       realSessionId: result.sessionId || null,
       result: result.text,
-      tokens: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+      tokens: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, cacheReadTokens: result.cacheReadTokens, cacheCreationTokens: result.cacheCreationTokens },
     });
 
     // Save assistant message and update thread with real session ID
     const botMsgId = `web-${threadKey}-bot-${Date.now()}`;
-    ctx.store.saveMessage(botMsgId, "web", threadKey, true, result.text.slice(0, 200), result.inputTokens, result.outputTokens);
+    ctx.store.saveMessage(botMsgId, "web", threadKey, true, result.text.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens);
     ctx.store.upsertThread(threadKey, "web", `web:${payload.project}`, result.sessionId || "", payload.project);
 
     // Notify sidebar of new/updated session (deferred to next tick to avoid racing with chat.done handlers)
@@ -140,7 +155,7 @@ async function handleChatSend(
       });
     }, 0);
   } catch (err: unknown) {
-    broadcast(clients, {
+    sendToSubscribers(subscriptions, threadKey, {
       type: "chat.error",
       sessionId: threadKey,
       error: {
@@ -168,6 +183,7 @@ export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketS
     },
   });
   const clients = new Set<WebSocket>();
+  const subscriptions = new Map<string, Set<WebSocket>>();
 
   // Heartbeat interval
   const heartbeatInterval = setInterval(() => {
@@ -205,8 +221,17 @@ export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketS
           break;
         }
 
+        case "chat.subscribe": {
+          const threadKey = msg.threadKey as string;
+          if (threadKey) {
+            if (!subscriptions.has(threadKey)) subscriptions.set(threadKey, new Set());
+            subscriptions.get(threadKey)!.add(ws);
+          }
+          break;
+        }
+
         case "chat.send": {
-          handleChatSend(ws, clients, ctx, {
+          handleChatSend(ws, clients, subscriptions, ctx, {
             project: msg.project as string,
             message: msg.message as string,
             sessionId: msg.sessionId as string | undefined,
@@ -233,11 +258,19 @@ export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketS
 
     ws.on("close", () => {
       clients.delete(ws);
+      for (const [key, subs] of subscriptions) {
+        subs.delete(ws);
+        if (subs.size === 0) subscriptions.delete(key);
+      }
     });
 
     ws.on("error", (err) => {
       console.error("WebSocket error:", err);
       clients.delete(ws);
+      for (const [key, subs] of subscriptions) {
+        subs.delete(ws);
+        if (subs.size === 0) subscriptions.delete(key);
+      }
     });
   });
 

@@ -13,7 +13,7 @@ import {
   type ChatInputCommandInteraction,
   ChannelType,
 } from "discord.js";
-import type { PlatformAdapter, IncomingMessage, Reaction, ProjectConfig, ChannelInfo, Platform } from "../types.js";
+import type { PlatformAdapter, IncomingMessage, Reaction, ProjectConfig, ChannelInfo, Platform } from "@cc2im/core";
 
 export class DiscordAdapter implements PlatformAdapter {
   readonly platform: Platform = "discord";

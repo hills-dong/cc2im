@@ -56,7 +56,7 @@
     --input: 240 20% 26%;
     --ring: 240 3.7% 15.9%;
 
-    --sidebar-background: 215 43% 16%;
+    --sidebar-background: 215 43% 13%;
     --sidebar-foreground: 0 0% 88%;
     --sidebar-primary: 0 0% 98%;
     --sidebar-primary-foreground: 240 5.9% 10%;
@@ -80,6 +80,26 @@
   }
 }
 
+/* Thin overlay scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+
 /* highlight.js dark theme overrides */
 .dark .hljs {
   background: hsl(215 43% 16%);
@@ -94,6 +114,74 @@
 .dark .hljs-built_in { color: #89ddff; }
 .dark .hljs-attr { color: #ffcb6b; }
 .dark .hljs-params { color: #e0e0e0; }
+
+/* ─── Animation system ──────────────────────────────────── */
+:root {
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Message entrance */
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-message-in {
+  animation: message-in 0.35s var(--ease-out-quart) both;
+}
+
+/* Gentle breathing / float for empty states */
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; transform: translateY(0); }
+  50% { opacity: 0.7; transform: translateY(-3px); }
+}
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Stagger entrance for cards / lists */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 0.4s var(--ease-out-quart) both;
+}
+
+/* Connection pulse for status indicators */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-status-pulse {
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+/* Onboarding step crossfade */
+@keyframes step-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-step-in {
+  animation: step-in 0.3s var(--ease-out-expo) both;
+}
+
+/* Button press scale */
+.press-scale {
+  transition: transform 0.1s var(--ease-out-quart);
+}
+.press-scale:active {
+  transform: scale(0.95);
+}
+
+/* Accessibility: respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 /* highlight.js light theme overrides */
 .hljs {

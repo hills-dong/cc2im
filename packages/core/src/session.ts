@@ -105,8 +105,6 @@ export class SessionManager {
     args.push("-p", fullMessage);
 
     return new Promise<SessionResult>((resolve, reject) => {
-      let timedOut = false;
-
       const proc = spawn(this.claudeConfig.command, args, {
         cwd: projectDir,
         env: { ...process.env, CLAUDECODE: undefined },
@@ -124,29 +122,27 @@ export class SessionManager {
       let cacheReadTokens = 0;
       let cacheCreationTokens = 0;
 
-      const resetTimeout = () => {
-        clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => {
-          timedOut = true;
-          proc.kill("SIGTERM");
-        }, this.claudeConfig.timeout);
-      };
-      let idleTimer = setTimeout(() => {
-        timedOut = true;
-        proc.kill("SIGTERM");
-      }, this.claudeConfig.timeout);
-
       proc.stderr!.on("data", (chunk: Buffer) => {
         stderrText += chunk.toString();
-        resetTimeout();
       });
 
       const rl = createInterface({ input: proc.stdout! });
 
       rl.on("line", (line) => {
-        resetTimeout();
         const event = this.parseLine(line);
         if (!event) return;
+
+        // Debug: log tool_use blocks with full details
+        if (event.type === "assistant" && "message" in event) {
+          const msg = (event as any).message;
+          if (msg?.content) {
+            for (const b of msg.content) {
+              if (b.type === "tool_use") {
+                console.log(`[session] tool_use detected: name=${b.name}, input=${JSON.stringify(b.input).slice(0, 200)}`);
+              }
+            }
+          }
+        }
 
         if (event.type === "system" && "subtype" in event && event.subtype === "init") {
           resultSessionId = (event as any).session_id;
@@ -181,7 +177,6 @@ export class SessionManager {
       });
 
       proc.on("close", (code) => {
-        clearTimeout(idleTimer);
         this.active.delete(threadKey);
 
         const queue = this.queues.get(threadKey);
@@ -192,9 +187,7 @@ export class SessionManager {
           this.queues.delete(threadKey);
         }
 
-        if (timedOut) {
-          reject(new Error(`Claude Code timed out after ${this.claudeConfig.timeout}ms`));
-        } else if (code !== 0 && !fullText) {
+        if (code !== 0 && !fullText) {
           reject(new Error(stderrText.trim() || `Claude Code exited with code ${code}`));
         } else {
           resolve({
@@ -210,7 +203,6 @@ export class SessionManager {
       });
 
       proc.on("error", (err) => {
-        clearTimeout(idleTimer);
         this.active.delete(threadKey);
 
         // Process queue so pending callers aren't stuck forever

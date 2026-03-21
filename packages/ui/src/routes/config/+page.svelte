@@ -197,7 +197,7 @@
     {:else}
 
       <!-- Formatter Settings Card -->
-      <Card.Root>
+      <Card.Root class="animate-fade-up">
         <Card.Header>
           <Card.Title>Formatter</Card.Title>
         </Card.Header>
@@ -236,7 +236,7 @@
       </Card.Root>
 
       <!-- Claude Settings Card -->
-      <Card.Root>
+      <Card.Root class="animate-fade-up" style="animation-delay: 80ms">
         <Card.Header>
           <Card.Title>Claude Settings</Card.Title>
         </Card.Header>
@@ -286,7 +286,7 @@
       </Card.Root>
 
       <!-- Discord Settings Card -->
-      <Card.Root>
+      <Card.Root class="animate-fade-up" style="animation-delay: 160ms">
         <Card.Header>
           <Card.Title>Discord</Card.Title>
         </Card.Header>
@@ -305,7 +305,7 @@
       </Card.Root>
 
       <!-- Lark Settings Card -->
-      <Card.Root>
+      <Card.Root class="animate-fade-up" style="animation-delay: 240ms">
         <Card.Header>
           <Card.Title>Lark / Feishu</Card.Title>
         </Card.Header>
@@ -333,7 +333,7 @@
       </Card.Root>
 
       <!-- Projects Card -->
-      <Card.Root>
+      <Card.Root class="animate-fade-up" style="animation-delay: 320ms">
         <Card.Header>
           <div class="flex items-center justify-between">
             <Card.Title>Projects</Card.Title>
@@ -417,7 +417,7 @@
                         <span class="inline-flex items-center rounded-sm bg-secondary text-secondary-foreground text-xs px-1.5 py-0.5">{project.model}</span>
                       {/if}
                       {#each Object.entries(project.platforms).filter(([, v]) => v) as [platform]}
-                        <span class="inline-flex items-center rounded-sm bg-green-900/40 text-green-400 text-xs px-1.5 py-0.5">{platform}</span>
+                        <span class="inline-flex items-center rounded-sm bg-secondary text-secondary-foreground text-xs px-1.5 py-0.5">{platform}</span>
                       {/each}
                     </div>
                   </div>

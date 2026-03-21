@@ -2,15 +2,21 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-  import { Button } from '$lib/components/ui/button/index.js';
   import { on } from '$lib/stores/connection';
   import MessageSquare from 'lucide-svelte/icons/message-square';
   import BarChart3 from 'lucide-svelte/icons/bar-chart-3';
   import Settings from 'lucide-svelte/icons/settings';
   import Plus from 'lucide-svelte/icons/plus';
   import ChevronRight from 'lucide-svelte/icons/chevron-right';
+  import Archive from 'lucide-svelte/icons/archive';
+  import Terminal from 'lucide-svelte/icons/terminal';
+  import Circle from 'lucide-svelte/icons/circle';
+  import CircleCheck from 'lucide-svelte/icons/circle-check';
+
+  type SessionStatus = 'active' | 'done' | 'archived';
 
   interface Project {
     name: string;
@@ -21,11 +27,10 @@
   interface Session {
     id: string;
     name: string;
+    status: SessionStatus;
   }
 
-  function truncate(text: string, max = 27): string {
-    return text.length > max ? text.slice(0, max) + '...' : text;
-  }
+  const STAGGER_MAX = 8;
 
   let projects = $state<Project[]>([]);
   let loading = $state(true);
@@ -78,9 +83,10 @@
       if (res.ok) {
         const data = await res.json();
         const items = Array.isArray(data) ? data : [];
-        return items.map((s: any) => ({
+        return items.filter((s: any) => s.platform !== 'discord').map((s: any) => ({
           id: s.thread_id ?? s.id ?? s.session_id ?? '',
           name: s.name ?? '',
+          status: (s.status ?? 'active') as SessionStatus,
         }));
       }
     } catch (e) {
@@ -92,61 +98,103 @@
   function createSession(project: string) {
     goto(`/chat/${encodeURIComponent(project)}`);
   }
+
+  async function archiveSession(projectName: string, sessionId: string) {
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/archive`, { method: 'PATCH' });
+      if (!res.ok) throw new Error('Failed to archive');
+      const proj = projects.find(p => p.name === projectName);
+      if (proj) {
+        proj.sessions = proj.sessions.filter(s => s.id !== sessionId);
+        projects = [...projects];
+      }
+      // Navigate away if archiving the current session
+      if (currentSession === sessionId) {
+        goto(`/chat/${encodeURIComponent(projectName)}`);
+      }
+      toast.success('Session archived');
+    } catch {
+      toast.error('Failed to archive session');
+    }
+  }
 </script>
 
-<Sidebar.Root collapsible="none">
-  <Sidebar.Header>
-    <span class="px-2 py-1 text-base font-bold tracking-wide text-sidebar-foreground">cc2im</span>
+<Sidebar.Root collapsible="none" class="overflow-x-hidden">
+  <!-- C1 fix: Logo with brand icon, clickable, better spacing -->
+  <Sidebar.Header class="h-10 flex-row items-center px-4">
+    <div class="flex items-center gap-1.5 select-none">
+      <Terminal class="size-4 text-sidebar-foreground/50" />
+      <span class="text-sm font-semibold tracking-tight text-sidebar-foreground">cc2im</span>
+    </div>
   </Sidebar.Header>
+  <div class="mx-3 h-px bg-sidebar-border"></div>
 
   <Sidebar.Content>
-    <!-- Projects section -->
     <Sidebar.Group>
-      <Sidebar.GroupLabel>Projects</Sidebar.GroupLabel>
       <Sidebar.GroupContent>
         {#if loading}
           <p class="px-2 py-2 text-xs text-sidebar-foreground/60">Loading…</p>
         {:else if projects.length === 0}
-          <p class="px-2 py-2 text-xs text-sidebar-foreground/60">No projects found</p>
+          <!-- L2 fix: empty state with guidance -->
+          <div class="px-2 py-3 text-xs text-sidebar-foreground/50">
+            <p>No projects yet.</p>
+            <p class="mt-1 text-sidebar-foreground/40">Start a chat to create one.</p>
+          </div>
         {:else}
           {#each projects as project (project.name)}
+            <div class="mb-2">
             <Collapsible.Root bind:open={project.expanded}>
               <Sidebar.Menu>
                 <Sidebar.MenuItem>
-                  <div class="flex items-center w-full">
-                    <Collapsible.Trigger class="flex flex-1 items-center gap-1 min-w-0">
-                      <ChevronRight
-                        class="size-3 shrink-0 transition-transform duration-200 {project.expanded ? 'rotate-90' : ''}"
-                      />
-                      <span class="truncate text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/70">
-                        {project.name}
-                      </span>
-                    </Collapsible.Trigger>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="size-5 shrink-0 ml-1"
-                      title="New session"
-                      onclick={() => createSession(project.name)}
-                    >
-                      <Plus class="size-3" />
-                    </Button>
-                  </div>
+                  <Sidebar.MenuButton
+                    onclick={() => { project.expanded = !project.expanded; }}
+                    class="font-medium"
+                  >
+                    <ChevronRight
+                      class="size-4 shrink-0 transition-transform duration-200 {project.expanded ? 'rotate-90' : ''}"
+                    />
+                    <span class="truncate">{project.name}</span>
+                  </Sidebar.MenuButton>
+                  <Sidebar.MenuAction
+                    title="New session"
+                    aria-label="New session in {project.name}"
+                    onclick={() => createSession(project.name)}
+                  >
+                    <Plus class="size-3.5" />
+                  </Sidebar.MenuAction>
                 </Sidebar.MenuItem>
               </Sidebar.Menu>
 
               <Collapsible.Content>
-                <Sidebar.Menu class="ms-4">
-                  {#each project.sessions as session (session.id)}
-                    <Sidebar.MenuItem>
+                <Sidebar.Menu class="mt-1">
+                  {#each project.sessions as session, i (session.id)}
+                    <Sidebar.MenuItem
+                      class={i < STAGGER_MAX ? 'animate-fade-up' : ''}
+                      style={i < STAGGER_MAX ? `animation-delay: ${i * 50}ms` : ''}
+                    >
                       <Sidebar.MenuButton
+                        class="pe-8"
                         isActive={currentProject === project.name && currentSession === session.id}
                         onclick={() => goto(`/chat/${encodeURIComponent(project.name)}/${encodeURIComponent(session.id)}`)}
                         title={session.name || session.id}
-                        size="sm"
                       >
-                        <span class="truncate">{truncate(session.name || session.id)}</span>
+                        <span class="flex items-center justify-center !size-4 shrink-0">
+                          {#if session.status === 'done'}
+                            <CircleCheck class="!size-2 text-emerald-500/70" />
+                          {:else}
+                            <Circle class="!size-2 text-sidebar-foreground/30" />
+                          {/if}
+                        </span>
+                        <span class="truncate">{session.name || session.id}</span>
                       </Sidebar.MenuButton>
+                      <Sidebar.MenuAction
+                        showOnHover
+                        title="Archive session"
+                        aria-label="Archive session: {session.name || session.id}"
+                        onclick={() => archiveSession(project.name, session.id)}
+                      >
+                        <Archive class="size-3.5" />
+                      </Sidebar.MenuAction>
                     </Sidebar.MenuItem>
                   {/each}
                   {#if project.sessions.length === 0}
@@ -157,24 +205,16 @@
                 </Sidebar.Menu>
               </Collapsible.Content>
             </Collapsible.Root>
+            </div>
           {/each}
         {/if}
       </Sidebar.GroupContent>
     </Sidebar.Group>
   </Sidebar.Content>
 
-  <Sidebar.Footer>
-    <Sidebar.Separator />
+  <div class="mx-3 h-px bg-sidebar-border"></div>
+  <Sidebar.Footer class="bg-sidebar-accent/30">
     <Sidebar.Menu>
-      <Sidebar.MenuItem>
-        <Sidebar.MenuButton
-          isActive={activePage === 'chat'}
-          onclick={() => goto('/chat')}
-        >
-          <MessageSquare />
-          <span>Chat</span>
-        </Sidebar.MenuButton>
-      </Sidebar.MenuItem>
       <Sidebar.MenuItem>
         <Sidebar.MenuButton
           isActive={activePage === 'stats'}

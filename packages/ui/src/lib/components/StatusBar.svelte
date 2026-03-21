@@ -1,20 +1,42 @@
 <script lang="ts">
   import { connectionStatus } from '$lib/stores/connection';
-  import { Badge } from '$lib/components/ui/badge';
+
+  let {
+    inputTokens = 0,
+    outputTokens = 0,
+    cacheReadTokens = 0,
+    cacheCreationTokens = 0,
+  }: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  } = $props();
 
   let status = $derived($connectionStatus);
 
-  const statusConfig = {
-    connected: { label: 'Connected', variant: 'default' as const, class: 'bg-green-600' },
-    connecting: { label: 'Connecting...', variant: 'secondary' as const, class: 'bg-yellow-600' },
-    disconnected: { label: 'Disconnected', variant: 'destructive' as const, class: '' }
+  const statusLabels: Record<string, string> = {
+    connected: 'Connected',
+    connecting: 'Connecting\u2026',
+    disconnected: 'Disconnected',
   };
 
-  let config = $derived(statusConfig[status] ?? statusConfig.disconnected);
+  let label = $derived(statusLabels[status] ?? 'Disconnected');
+
+  let effectiveInput = $derived(
+    Math.round(inputTokens + cacheCreationTokens * 1.25 + cacheReadTokens * 0.1)
+  );
+  let inputTooltip = $derived(
+    `${inputTokens.toLocaleString()} + ${cacheCreationTokens.toLocaleString()} × 1.25 + ${cacheReadTokens.toLocaleString()} × 0.1`
+  );
+  let showTokens = $derived(effectiveInput > 0 || outputTokens > 0);
 </script>
 
-<div class="flex items-center gap-2 px-4 py-1 border-t border-border bg-background text-xs text-muted-foreground">
-  <Badge variant={config.variant} class="h-5 text-[10px] {config.class}">
-    {config.label}
-  </Badge>
+<div class="flex items-center gap-2 px-4 py-1 bg-background text-xs text-muted-foreground border-t border-border">
+  <span>{label}</span>
+  {#if showTokens}
+    <span class="ml-auto tabular-nums">
+      <span title={inputTooltip}>in: {effectiveInput.toLocaleString()}</span> · out: {outputTokens.toLocaleString()}
+    </span>
+  {/if}
 </div>

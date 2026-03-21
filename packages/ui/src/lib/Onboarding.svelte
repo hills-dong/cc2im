@@ -1,7 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { Label } from '$lib/components/ui/label/index.js';
 
   const TOTAL_STEPS = 5;
 
@@ -64,9 +67,49 @@
     }
   }
 
+  let saving = $state(false);
+
   async function handleComplete() {
-    open = false;
-    goto('/chat');
+    saving = true;
+    try {
+      // Save config with claude command and platform tokens
+      const config: Record<string, unknown> = {
+        claude: { command: claudeCommand },
+      };
+      if (discordToken) config.discord = { token: discordToken };
+      if (larkAppId || larkAppSecret) config.lark = { appId: larkAppId, appSecret: larkAppSecret };
+
+      const configRes = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (!configRes.ok) throw new Error(`Config save failed: HTTP ${configRes.status}`);
+
+      // Add the first project
+      if (projectName && projectDirectory) {
+        const projRes = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: projectName,
+            directory: projectDirectory,
+            platforms: {
+              ...(discordToken ? { discord: true } : {}),
+              ...(larkAppId ? { lark: true } : {}),
+            },
+          }),
+        });
+        if (!projRes.ok) throw new Error(`Project add failed: HTTP ${projRes.status}`);
+      }
+
+      open = false;
+      goto('/chat');
+    } catch (e) {
+      toast.error("Setup failed: " + String(e));
+    } finally {
+      saving = false;
+    }
   }
 </script>
 
@@ -79,7 +122,7 @@
           class="w-2 h-2 rounded-full transition-colors duration-200 {i + 1 === step
             ? 'bg-primary'
             : i + 1 < step
-              ? 'bg-green-400'
+              ? 'bg-foreground/40'
               : 'bg-border'}"
         ></div>
       {/each}
@@ -97,16 +140,13 @@
             Usually just <code class="text-primary text-xs font-mono">claude</code> if it's in your PATH.
           </Dialog.Description>
         </Dialog.Header>
-        <div class="space-y-1.5 mb-4">
-          <label for="claude-cmd" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-            Claude Command
-          </label>
-          <input
+        <div class="space-y-2 mb-4">
+          <Label for="claude-cmd">Claude Command</Label>
+          <Input
             id="claude-cmd"
             type="text"
             bind:value={claudeCommand}
             placeholder="claude"
-            class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
           />
         </div>
         <p class="text-xs text-muted-foreground mt-3">
@@ -125,14 +165,14 @@
           </Dialog.Description>
         </Dialog.Header>
         <Button onclick={testClaude} disabled={testResult === "testing"} class="mb-4">
-          {testResult === "testing" ? "Testing…" : "Test Command"}
+          {testResult === "testing" ? "Testing\u2026" : "Test Command"}
         </Button>
         {#if testResult === "ok"}
-          <div class="mt-4 px-3.5 py-2.5 rounded-md border border-green-400 bg-green-950/30 text-green-400 text-sm leading-relaxed">
+          <div class="mt-4 px-3.5 py-2.5 rounded-md border border-border bg-muted/30 text-foreground text-sm leading-relaxed">
             Claude Code detected successfully.
           </div>
         {:else if testResult === "fail"}
-          <div class="mt-4 px-3.5 py-2.5 rounded-md border border-red-400 bg-red-950/30 text-red-400 text-sm leading-relaxed">
+          <div class="mt-4 px-3.5 py-2.5 rounded-md border border-destructive bg-destructive/10 text-destructive text-sm leading-relaxed">
             Test failed: {testError || "Unknown error"}.<br />
             Go back and check the command path.
           </div>
@@ -145,30 +185,24 @@
           <Dialog.Description>Set up a project directory that Claude will work with.</Dialog.Description>
         </Dialog.Header>
         <div class="space-y-4">
-          <div class="space-y-1.5">
-            <label for="proj-name" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-              Project Name
-            </label>
-            <input
+          <div class="space-y-2">
+            <Label for="proj-name">Project Name</Label>
+            <Input
               id="proj-name"
               type="text"
               bind:value={projectName}
               placeholder="my-project"
-              class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
             />
           </div>
-          <div class="space-y-1.5">
-            <label for="proj-dir" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-              Directory Path
-            </label>
-            <input
+          <div class="space-y-2">
+            <Label for="proj-dir">Directory Path</Label>
+            <Input
               id="proj-dir"
               type="text"
               bind:value={projectDirectory}
               placeholder="/home/user/my-project"
-              class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
             />
-            <span class="block text-[11px] text-muted-foreground mt-1">Enter the absolute path to your project directory.</span>
+            <p class="text-xs text-muted-foreground">Enter the absolute path to your project directory.</p>
           </div>
         </div>
 
@@ -184,47 +218,38 @@
         </Dialog.Header>
         <div class="space-y-6">
           <div>
-            <h3 class="text-sm font-semibold text-primary mb-3">Discord</h3>
-            <div class="space-y-1.5">
-              <label for="discord-tok" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                Bot Token
-              </label>
-              <input
+            <h3 class="text-sm font-semibold mb-3">Discord</h3>
+            <div class="space-y-2">
+              <Label for="discord-tok">Bot Token</Label>
+              <Input
                 id="discord-tok"
                 type="password"
                 bind:value={discordToken}
                 placeholder="••••••••"
                 autocomplete="off"
-                class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
               />
             </div>
           </div>
           <div>
-            <h3 class="text-sm font-semibold text-primary mb-3">Lark / Feishu</h3>
+            <h3 class="text-sm font-semibold mb-3">Lark / Feishu</h3>
             <div class="space-y-3">
-              <div class="space-y-1.5">
-                <label for="lark-id" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                  App ID
-                </label>
-                <input
+              <div class="space-y-2">
+                <Label for="lark-id">App ID</Label>
+                <Input
                   id="lark-id"
                   type="text"
                   bind:value={larkAppId}
                   placeholder="cli_xxx"
-                  class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
                 />
               </div>
-              <div class="space-y-1.5">
-                <label for="lark-sec" class="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                  App Secret
-                </label>
-                <input
+              <div class="space-y-2">
+                <Label for="lark-sec">App Secret</Label>
+                <Input
                   id="lark-sec"
                   type="password"
                   bind:value={larkAppSecret}
                   placeholder="••••••••"
                   autocomplete="off"
-                  class="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground outline-none focus:border-primary transition-colors"
                 />
               </div>
             </div>
@@ -239,31 +264,31 @@
         </Dialog.Header>
         <div class="rounded-lg border border-border bg-muted/20 p-4 mb-5 space-y-0">
           <div class="flex items-baseline gap-3 py-1.5 border-b border-border/50">
-            <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Claude Command</span>
+            <span class="text-xs text-muted-foreground min-w-[130px]">Claude Command</span>
             <code class="text-xs font-mono text-primary">{claudeCommand}</code>
           </div>
           <div class="flex items-baseline gap-3 py-1.5 border-b border-border/50">
-            <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Project</span>
+            <span class="text-xs text-muted-foreground min-w-[130px]">Project</span>
             <span class="text-sm text-foreground">{projectName}</span>
           </div>
           <div class="flex items-baseline gap-3 py-1.5 {discordToken || larkAppId ? 'border-b border-border/50' : ''}">
-            <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Directory</span>
+            <span class="text-xs text-muted-foreground min-w-[130px]">Directory</span>
             <code class="text-xs font-mono text-primary">{projectDirectory}</code>
           </div>
           {#if discordToken}
             <div class="flex items-baseline gap-3 py-1.5 {larkAppId ? 'border-b border-border/50' : ''}">
-              <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Discord</span>
-              <span class="text-sm text-green-400">Configured</span>
+              <span class="text-xs text-muted-foreground min-w-[130px]">Discord</span>
+              <span class="text-sm text-foreground">Configured</span>
             </div>
           {/if}
           {#if larkAppId}
             <div class="flex items-baseline gap-3 py-1.5">
-              <span class="text-[11px] uppercase tracking-wider text-muted-foreground min-w-[130px]">Lark</span>
-              <span class="text-sm text-green-400">Configured</span>
+              <span class="text-xs text-muted-foreground min-w-[130px]">Lark</span>
+              <span class="text-sm text-foreground">Configured</span>
             </div>
           {/if}
         </div>
-        <p class="text-sm text-muted-foreground italic">You're ready to start chatting with Claude!</p>
+        <p class="text-sm text-muted-foreground">You're ready to start chatting with Claude!</p>
       {/if}
     </div>
 
@@ -281,7 +306,9 @@
         {#if step < TOTAL_STEPS}
           <Button onclick={next} disabled={!canProceed()}>Next</Button>
         {:else}
-          <Button onclick={handleComplete}>Start Chatting</Button>
+          <Button onclick={handleComplete} disabled={saving}>
+            {saving ? "Saving\u2026" : "Start Chatting"}
+          </Button>
         {/if}
       </div>
     </Dialog.Footer>

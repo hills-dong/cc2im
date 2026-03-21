@@ -1,5 +1,6 @@
 <script lang="ts">
   import { marked } from 'marked';
+  import DOMPurify from 'dompurify';
   import hljs from 'highlight.js';
   import { Badge } from '$lib/components/ui/badge';
   import type { ChatMessage } from './stores/chat.js';
@@ -9,7 +10,7 @@
   function renderMarkdown(content: string): string {
     if (!content) return '';
     const html = marked.parse(content, { async: false }) as string;
-    return html;
+    return DOMPurify.sanitize(html);
   }
 
   function highlightCode(node: HTMLElement) {
@@ -23,7 +24,7 @@
 
 <div
   class={[
-    'flex flex-col mb-4',
+    'flex flex-col mb-4 animate-message-in',
     message.role === 'user' ? 'items-end' : 'items-start',
   ].join(' ')}
 >
@@ -48,12 +49,15 @@
   </div>
 
   {#if message.tokens}
+    {@const t = message.tokens}
+    {@const effectiveInput = Math.round(t.input + t.cacheCreation * 1.25 + t.cacheRead * 0.1)}
+    {@const inputTooltip = `${t.input} + ${t.cacheCreation} × 1.25 + ${t.cacheRead} × 0.1`}
     <div class="flex gap-1 mt-1 px-1">
-      <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4">
-        in: {message.tokens.input}
+      <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4" title={inputTooltip}>
+        in: {effectiveInput}
       </Badge>
       <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4">
-        out: {message.tokens.output}
+        out: {t.output}
       </Badge>
     </div>
   {/if}

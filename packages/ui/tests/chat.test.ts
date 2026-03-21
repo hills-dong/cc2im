@@ -246,7 +246,7 @@ describe("chat store", () => {
       });
 
       const session = get(sessions).get("new-proj")!;
-      expect(session.messages[1].tokens).toEqual({ input: 100, output: 200 });
+      expect(session.messages[1].tokens).toEqual({ input: 100, output: 200, cacheRead: 0, cacheCreation: 0 });
       vi.restoreAllMocks();
     });
 

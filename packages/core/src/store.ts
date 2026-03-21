@@ -1,11 +1,12 @@
 import Database from "better-sqlite3";
 import type { Platform } from "./types.js";
 
-export type ThreadStatus = "active" | "done";
+export type ThreadStatus = "active" | "done" | "archived";
 
 export const THREAD_STATUS_ICONS: Record<ThreadStatus, string> = {
   active: "🔄",
   done: "✅",
+  archived: "📦",
 };
 
 export interface ThreadRow {
@@ -27,6 +28,8 @@ export interface MessageRow {
   content_summary: string | null;
   input_tokens: number;
   output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
   created_at: string;
 }
 
@@ -127,6 +130,14 @@ export class Store {
     } catch {
       // Columns already exist
     }
+
+    // Add cache token columns to messages table
+    try {
+      this.db.exec("ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER DEFAULT 0");
+      this.db.exec("ALTER TABLE messages ADD COLUMN cache_creation_tokens INTEGER DEFAULT 0");
+    } catch {
+      // Columns already exist
+    }
   }
 
   upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string, name?: string): void {
@@ -134,7 +145,7 @@ export class Store {
       this.db.prepare(`
         INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name, name)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(thread_id, platform) DO UPDATE SET session_id = excluded.session_id
+        ON CONFLICT(thread_id, platform) DO UPDATE SET session_id = excluded.session_id, name = excluded.name
       `).run(threadId, platform, channelId, sessionId, projectName, name);
     } else {
       this.db.prepare(`
@@ -157,16 +168,22 @@ export class Store {
     ).run(status, threadId, platform);
   }
 
+  archiveThread(threadId: string): void {
+    this.db.prepare(
+      "UPDATE threads SET status = 'archived' WHERE thread_id = ?"
+    ).run(threadId);
+  }
+
   deleteThread(threadId: string, platform: Platform): void {
     this.db.prepare("DELETE FROM messages WHERE thread_id = ? AND platform = ?").run(threadId, platform);
     this.db.prepare("DELETE FROM threads WHERE thread_id = ? AND platform = ?").run(threadId, platform);
   }
 
-  saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string, inputTokens = 0, outputTokens = 0): void {
+  saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string, inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO messages (message_id, platform, thread_id, is_bot, content_summary, input_tokens, output_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(messageId, platform, threadId, isBot ? 1 : 0, contentSummary ?? null, inputTokens, outputTokens);
+      INSERT OR REPLACE INTO messages (message_id, platform, thread_id, is_bot, content_summary, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(messageId, platform, threadId, isBot ? 1 : 0, contentSummary ?? null, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens);
   }
 
   getMessage(messageId: string, platform: Platform): MessageRow | null {
@@ -204,14 +221,17 @@ export class Store {
     this.db.prepare("DELETE FROM pending_restarts").run();
   }
 
-  listSessions(projectName?: string): ThreadRow[] {
+  listSessions(projectName?: string, includeArchived = false): ThreadRow[] {
+    const statusFilter = includeArchived ? "" : "status != 'archived'";
     if (projectName) {
+      const where = statusFilter ? `project_name = ? AND ${statusFilter}` : "project_name = ?";
       return this.db.prepare(
-        "SELECT * FROM threads WHERE project_name = ? ORDER BY created_at DESC"
+        `SELECT * FROM threads WHERE ${where} ORDER BY created_at DESC`
       ).all(projectName) as ThreadRow[];
     }
+    const where = statusFilter ? `WHERE ${statusFilter}` : "";
     return this.db.prepare(
-      "SELECT * FROM threads ORDER BY created_at DESC"
+      `SELECT * FROM threads ${where} ORDER BY created_at DESC`
     ).all() as ThreadRow[];
   }
 
@@ -280,13 +300,14 @@ export class Store {
         COALESCE(SUM(tu.cache_creation_tokens), 0) AS cacheCreationTokens
       FROM token_usage tu
       LEFT JOIN (
-        SELECT session_id,
+        SELECT thread_id,
+               session_id,
                MIN(platform) AS platform,
                MIN(name) AS sessionName,
                MIN(created_at) AS sessionCreatedAt
         FROM threads
-        GROUP BY session_id
-      ) ts ON ts.session_id = tu.session_id
+        GROUP BY thread_id
+      ) ts ON ts.session_id = tu.session_id OR ts.thread_id = tu.session_id
       WHERE (? IS NULL OR tu.created_at >= ?)
       GROUP BY tu.project_name, tu.session_id
       ORDER BY tu.project_name, SUM(tu.input_tokens + tu.output_tokens) DESC

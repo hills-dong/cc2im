@@ -1,9 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
-  import { Badge } from '$lib/components/ui/badge';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import MessageBubble from '$lib/MessageBubble.svelte';
   import ChatInput from '$lib/ChatInput.svelte';
@@ -19,44 +17,31 @@
     messages.length > 0 && messages[messages.length - 1]?.streaming === true
   );
 
-  const totalInputTokens = $derived(
-    messages.reduce((sum, m) => sum + (m.tokens?.input ?? 0), 0)
-  );
-  const totalOutputTokens = $derived(
-    messages.reduce((sum, m) => sum + (m.tokens?.output ?? 0), 0)
-  );
-
   let viewportEl = $state<HTMLElement | null>(null);
+  let isNearBottom = $state(true);
 
-  onMount(async () => {
-    // Validate project exists (best-effort)
-    try {
-      const projRes = await fetch('/api/projects');
-      if (projRes.ok) {
-        const projects = await projRes.json();
-        if (!projects.some((p: { name: string }) => p.name === project)) {
-          toast.error(`Project "${project}" not found`);
-          goto('/chat', { replaceState: true });
-          return;
-        }
-      }
-    } catch {
-      // Continue — validation is best-effort
-    }
+  function checkNearBottom() {
+    if (!viewportEl) return;
+    const threshold = 80;
+    isNearBottom = viewportEl.scrollHeight - viewportEl.scrollTop - viewportEl.clientHeight < threshold;
+  }
 
-    try {
-      await loadSession('', sessionId, project);
-    } catch {
+  // Load session whenever sessionId changes (handles both initial mount and sidebar navigation)
+  $effect(() => {
+    const sid = sessionId;
+    const proj = project;
+    if (!sid) return;
+    loadSession('', sid, proj).catch(() => {
       toast.error('Failed to load session');
       goto('/chat', { replaceState: true });
-    }
+    });
   });
 
   $effect(() => {
-    // scroll to bottom when messages change or streaming updates
+    // scroll to bottom only when user is near the bottom (or streaming)
     void messages.length;
     void isStreaming;
-    if (viewportEl) {
+    if (viewportEl && (isNearBottom || isStreaming)) {
       viewportEl.scrollTop = viewportEl.scrollHeight;
     }
   });
@@ -72,7 +57,7 @@
 </script>
 
 <div class="flex flex-col h-full overflow-hidden">
-  <ScrollArea class="flex-1" bind:viewportRef={viewportEl}>
+  <ScrollArea class="flex-1 min-h-0" bind:viewportRef={viewportEl} onscroll={checkNearBottom}>
     <div class="p-5">
       {#if messages.length === 0}
         <div class="flex items-center justify-center h-32 text-sm text-muted-foreground">
@@ -85,18 +70,6 @@
       {/if}
     </div>
   </ScrollArea>
-
-  {#if messages.length > 0}
-    <div class="flex justify-end gap-1.5 px-4 py-1 border-t border-border bg-muted/20">
-      <span class="text-xs text-muted-foreground">Session tokens</span>
-      <Badge variant="outline" class="text-[10px] px-1.5 py-0 h-4">
-        in: {totalInputTokens.toLocaleString()}
-      </Badge>
-      <Badge variant="outline" class="text-[10px] px-1.5 py-0 h-4">
-        out: {totalOutputTokens.toLocaleString()}
-      </Badge>
-    </div>
-  {/if}
 
   <ChatInput
     {project}

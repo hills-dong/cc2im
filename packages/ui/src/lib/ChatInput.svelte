@@ -33,7 +33,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       handleSend();
     }
@@ -87,7 +87,7 @@
   }
 </script>
 
-<div class="border-t border-border bg-background px-4 py-3 flex-shrink-0">
+<div class="bg-background px-4 py-3 flex-shrink-0">
   {#if images.length > 0}
     <div class="flex gap-2 flex-wrap mb-2">
       {#each images as img, i (i)}
@@ -124,7 +124,7 @@
     <Textarea
       bind:ref={textareaEl}
       bind:value={text}
-      class="flex-1 min-h-0 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-0 p-0 text-sm leading-relaxed"
+      class="flex-1 min-h-0 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-0 p-0 py-1.5 text-sm leading-relaxed"
       placeholder={disabled ? 'Select a project to start chatting' : 'Message\u2026 (Enter to send, Shift+Enter for newline)'}
       {disabled}
       rows={1}
@@ -158,7 +158,4 @@
     </div>
   </div>
 
-  <p class="text-xs text-muted-foreground text-center mt-1.5 opacity-60">
-    Drag &amp; drop or paste images to attach
-  </p>
 </div>

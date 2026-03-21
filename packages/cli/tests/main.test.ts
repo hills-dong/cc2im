@@ -42,12 +42,13 @@ vi.mock("@cc2im/core", () => ({
   SessionManager: vi.fn(() => mockSessionManager),
   Router: vi.fn(() => mockRouter),
   Formatter: vi.fn(() => mockFormatter),
-  DiscordAdapter: vi.fn(() => mockAdapter),
   THREAD_STATUS_ICONS: { active: "🔄", done: "✅" },
 }));
 
-// Mock discord.js to prevent import errors
-vi.mock("discord.js", () => ({}));
+// Mock the local DiscordAdapter (moved from @cc2im/core)
+vi.mock("../src/adapters/discord.js", () => ({
+  DiscordAdapter: vi.fn(() => mockAdapter),
+}));
 
 // Mock child_process (used by generateThreadTitle)
 vi.mock("child_process", async (importOriginal) => {
@@ -98,10 +99,11 @@ describe("main()", () => {
       SessionManager: vi.fn(() => mockSessionManager),
       Router: vi.fn(() => mockRouter),
       Formatter: vi.fn(() => mockFormatter),
-      DiscordAdapter: vi.fn(() => mockAdapter),
       THREAD_STATUS_ICONS: { active: "🔄", done: "✅" },
     }));
-    vi.doMock("discord.js", () => ({}));
+    vi.doMock("../src/adapters/discord.js", () => ({
+      DiscordAdapter: vi.fn(() => mockAdapter),
+    }));
     vi.doMock("child_process", async (importOriginal) => {
       const mod = await importOriginal<typeof import("child_process")>();
       return { ...mod, execFile: vi.fn() };
@@ -131,10 +133,11 @@ describe("main()", () => {
       SessionManager: vi.fn(() => mockSessionManager),
       Router: vi.fn(() => mockRouter),
       Formatter: vi.fn(() => mockFormatter),
-      DiscordAdapter: vi.fn(() => mockAdapter),
       THREAD_STATUS_ICONS: { active: "🔄", done: "✅" },
     }));
-    vi.doMock("discord.js", () => ({}));
+    vi.doMock("../src/adapters/discord.js", () => ({
+      DiscordAdapter: vi.fn(() => mockAdapter),
+    }));
     vi.doMock("child_process", async (importOriginal) => {
       const mod = await importOriginal<typeof import("child_process")>();
       return { ...mod, execFile: vi.fn() };

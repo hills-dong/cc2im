@@ -105,48 +105,70 @@ formatter:
     ws.close();
   });
 
-  it("multiple clients receive broadcast messages from chat.send", async () => {
+  it("subscribed clients receive chat events, unsubscribed do not", async () => {
     const ws1 = await connect();
     const ws2 = await connect();
+    const ws3 = await connect();
 
-    // Collect all messages on ws2
+    const threadKey = `web:test-proj:${Date.now()}`;
+
+    // ws2 subscribes to the same threadKey; ws3 does NOT subscribe
+    ws2.send(JSON.stringify({ type: "chat.subscribe", threadKey }));
+
+    // Collect messages on ws2 (subscribed)
     const ws2Messages: any[] = [];
-    const gotBroadcast = new Promise<void>((resolve) => {
+    const ws2Done = new Promise<void>((resolve) => {
       ws2.on("message", (data) => {
         const msg = JSON.parse(data.toString());
         ws2Messages.push(msg);
-        // chat.done or chat.error means the session finished
         if (msg.type === "chat.done" || msg.type === "chat.error") {
           resolve();
         }
       });
     });
 
-    // Send chat.send from ws1 to test-proj (echo command will exit quickly)
+    // Collect messages on ws3 (unsubscribed) — should only get session.update (global broadcast)
+    const ws3Messages: any[] = [];
+    ws3.on("message", (data) => {
+      ws3Messages.push(JSON.parse(data.toString()));
+    });
+
+    // Send chat.send from ws1 with a known threadKey
     ws1.send(
       JSON.stringify({
         type: "chat.send",
         project: "test-proj",
         message: "hello",
+        threadKey,
       }),
     );
 
-    // Wait for completion broadcast (with timeout)
+    // Wait for ws2 to receive completion (with timeout)
     await Promise.race([
-      gotBroadcast,
+      ws2Done,
       new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout waiting for broadcast")), 10000),
+        setTimeout(() => reject(new Error("Timeout waiting for subscribed message")), 10000),
       ),
     ]);
 
-    // ws2 should have received at least a chat.done or chat.error
+    // ws2 (subscribed) should have received chat.done or chat.error
     const terminalMsg = ws2Messages.find(
       (m) => m.type === "chat.done" || m.type === "chat.error",
     );
     expect(terminalMsg).toBeDefined();
-    expect(terminalMsg.sessionId).toBeDefined();
+    expect(terminalMsg.sessionId).toBe(threadKey);
+
+    // Give ws3 a brief moment to receive any straggling messages
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // ws3 (unsubscribed) should NOT have received chat.stream/chat.done/chat.error
+    const ws3ChatMsg = ws3Messages.find(
+      (m) => m.type === "chat.stream" || m.type === "chat.done" || m.type === "chat.error",
+    );
+    expect(ws3ChatMsg).toBeUndefined();
 
     ws1.close();
     ws2.close();
+    ws3.close();
   });
 });

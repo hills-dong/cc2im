@@ -5,6 +5,25 @@ import { loadConfig, saveConfig, addProject, removeProject } from "@cc2im/core";
 import type { Store } from "@cc2im/core";
 import type { ApiError, ProjectBody } from "./contracts/api.js";
 
+type RouteParams = Record<string, string>;
+
+function matchRoute(
+  method: string, pathname: string,
+  expectedMethod: string, pattern: string,
+): RouteParams | null {
+  if (method !== expectedMethod) return null;
+  const paramNames: string[] = [];
+  const regexStr = pattern.replace(/:([^/]+)/g, (_, name) => {
+    paramNames.push(name);
+    return "([^/]+)";
+  });
+  const match = pathname.match(new RegExp(`^${regexStr}$`));
+  if (!match) return null;
+  const params: RouteParams = {};
+  paramNames.forEach((name, i) => { params[name] = decodeURIComponent(match[i + 1]); });
+  return params;
+}
+
 export interface ApiContext {
   config: AppConfig;
   configPath: string;
@@ -94,12 +113,13 @@ export async function handleApi(
         (ctx.config as any)[key] = (parsed as any)[key];
       }
     }
-    // Preserve masked secrets — don't overwrite real values with "***"
-    if (ctx.config.discord?.token === "***") {
-      ctx.config.discord.token = loadConfig(ctx.configPath).discord?.token ?? "";
+    // Preserve secrets: if incoming value is masked or absent, keep original from file
+    const originalConfig = loadConfig(ctx.configPath);
+    if (!parsed.discord?.token || parsed.discord.token === "***") {
+      if (ctx.config.discord) ctx.config.discord.token = originalConfig.discord?.token ?? "";
     }
-    if (ctx.config.lark?.appSecret === "***") {
-      ctx.config.lark.appSecret = loadConfig(ctx.configPath).lark?.appSecret ?? "";
+    if (!parsed.lark?.appSecret || parsed.lark.appSecret === "***") {
+      if (ctx.config.lark) ctx.config.lark.appSecret = originalConfig.lark?.appSecret ?? "";
     }
     saveConfig(ctx.configPath, ctx.config);
     return json(res, 200, maskConfig(ctx.config));
@@ -139,9 +159,9 @@ export async function handleApi(
   }
 
   // PUT /api/projects/:name
-  const projectPutMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
-  if (method === "PUT" && projectPutMatch) {
-    const name = decodeURIComponent(projectPutMatch[1]);
+  const putParams = matchRoute(method, pathname, "PUT", "/api/projects/:name");
+  if (putParams) {
+    const name = putParams.name;
     const idx = ctx.config.projects.findIndex((p) => p.name === name);
     if (idx < 0) {
       return error(res, 404, "NOT_FOUND", `Project '${name}' not found`);
@@ -160,9 +180,9 @@ export async function handleApi(
   }
 
   // DELETE /api/projects/:name
-  const projectDeleteMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
-  if (method === "DELETE" && projectDeleteMatch) {
-    const name = decodeURIComponent(projectDeleteMatch[1]);
+  const deleteParams = matchRoute(method, pathname, "DELETE", "/api/projects/:name");
+  if (deleteParams) {
+    const name = deleteParams.name;
     removeProject(ctx.config, name);
     saveConfig(ctx.configPath, ctx.config);
     res.writeHead(204);
@@ -265,10 +285,20 @@ export async function handleApi(
     );
   }
 
+  // PATCH /api/sessions/:id/archive
+  const archiveParams = matchRoute(method, pathname, "PATCH", "/api/sessions/:id/archive");
+  if (archiveParams) {
+    const threadId = archiveParams.id;
+    ctx.store.archiveThread(threadId);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   // GET /api/sessions/:id/messages
-  const sessMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
-  if (method === "GET" && sessMatch) {
-    const threadId = decodeURIComponent(sessMatch[1]);
+  const messagesParams = matchRoute(method, pathname, "GET", "/api/sessions/:id/messages");
+  if (messagesParams) {
+    const threadId = messagesParams.id;
     const messages = ctx.store.getMessagesByThread(threadId, "web");
     return json(res, 200, messages);
   }

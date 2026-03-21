@@ -1,15 +1,89 @@
 import {
   loadConfig, saveConfig, addProject, removeProject,
   Store, THREAD_STATUS_ICONS, type ThreadStatus,
-  SessionManager, Formatter, Router, DiscordAdapter,
+  SessionManager, Formatter, Router,
   type PlatformAdapter, type IncomingMessage, type Reaction,
 } from "@cc2im/core";
+import { DiscordAdapter } from "./adapters/discord.js";
 import type { ChatInputCommandInteraction } from "discord.js";
 import { resolve, join, dirname } from "path";
 import { resolveConfigPath } from "./service.js";
 import { mkdtemp, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { execFile } from "child_process";
+
+// AskUserQuestion interception types
+interface AskQuestion {
+  question: string;
+  header: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect: boolean;
+}
+
+interface PendingAsk {
+  questions: AskQuestion[];
+  sessionId: string;
+  channelId: string;
+  threadId: string;
+  resolve: (answer: string) => void;
+}
+
+// Thread key → pending AskUserQuestion waiting for user reply
+const pendingAsks = new Map<string, PendingAsk>();
+
+/**
+ * Format AskUserQuestion questions as a Discord-friendly message.
+ */
+function formatAskQuestions(questions: AskQuestion[]): string {
+  const NUM_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
+  const OPT_LETTERS = ["A", "B", "C", "D"];
+  const lines: string[] = [];
+
+  for (let qi = 0; qi < questions.length; qi++) {
+    const q = questions[qi];
+    const num = NUM_EMOJI[qi] ?? `**${qi + 1}.**`;
+    lines.push(`${num} **${q.header}**`);
+    lines.push(q.question);
+    for (let oi = 0; oi < q.options.length; oi++) {
+      const opt = q.options[oi];
+      lines.push(`> ${OPT_LETTERS[oi]}. **${opt.label}** — ${opt.description}`);
+    }
+    lines.push("");
+  }
+
+  if (questions.length > 1) {
+    lines.push(`_回复字母组合即可，如 \`${"A".repeat(questions.length)}\`_`);
+  } else {
+    lines.push(`_回复字母即可，如 \`A\`_`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Parse user's answer to AskUserQuestion.
+ * Accepts letter combos like "BABB" or "B, A, B, B" or full option text.
+ */
+function parseAskAnswer(answer: string, questions: AskQuestion[]): string {
+  const OPT_LETTERS = ["A", "B", "C", "D"];
+  // Try to parse as letter combo
+  const letters = answer.toUpperCase().replace(/[\s,.\-/|]+/g, "");
+  const results: string[] = [];
+
+  for (let qi = 0; qi < questions.length; qi++) {
+    const q = questions[qi];
+    const letter = letters[qi];
+    const idx = letter ? OPT_LETTERS.indexOf(letter) : -1;
+    if (idx >= 0 && idx < q.options.length) {
+      results.push(`${q.header}: ${q.options[idx].label}`);
+    } else {
+      // Fallback: use the raw answer for this question
+      results.push(`${q.header}: ${answer}`);
+    }
+  }
+
+  return results.join("\n");
+}
 
 const CONFIG_PATH = resolveConfigPath(process.env.CC2IM_CONFIG);
 const DB_PATH = resolve(process.env.CC2IM_DB ?? join(dirname(CONFIG_PATH), "cc2im.db"));
@@ -158,6 +232,16 @@ async function handleMessage(
   store: Store,
   config: ReturnType<typeof loadConfig>,
 ) {
+  // Check if this is an answer to a pending AskUserQuestion
+  const askKey = `${msg.platform}:${msg.threadId ?? msg.channelId}`;
+  const pending = pendingAsks.get(askKey);
+  if (pending) {
+    pendingAsks.delete(askKey);
+    const parsed = parseAskAnswer(msg.content, pending.questions);
+    pending.resolve(parsed);
+    return;
+  }
+
   // Check for management commands
   if (router.isManagementCommand(msg.content)) {
     await handleManagementCommand(msg, adapter, router, store, config, sessionManager, formatter);
@@ -226,6 +310,7 @@ async function handleMessage(
   const activities: string[] = []; // recent activity log
   const flushInterval = 3000; // 3 seconds
   const startTime = Date.now();
+  let lastAskQuestions: AskQuestion[] | null = null; // intercepted AskUserQuestion
 
   const maxLen = formatter.getMaxLength(msg.platform);
 
@@ -272,7 +357,7 @@ async function handleMessage(
 
   // Inject platform context so Claude knows which platform it's on
   const platformHints: Record<string, string> = {
-    discord: "[平台: Discord | 可自由使用 emoji。要给消息加 reaction 请在回复末尾写 [react:emoji]。要发送图片请在回复中写出图片的绝对路径，系统会自动上传。]",
+    discord: "[平台: Discord | 可自由使用 emoji。禁止使用 plugin_discord_discord MCP 工具（reply/fetch_messages/react/edit_message/download_attachment 等），所有 Discord 交互由外层 harness 处理。要给消息加 reaction 请在回复末尾写 [react:emoji]。要发送图片请在回复中写出图片的绝对路径，系统会自动上传。]",
     lark: "[平台: 飞书/Lark | 请使用简洁的文字回复。]",
     web: "[平台: Web UI]",
   };
@@ -299,6 +384,13 @@ async function handleMessage(
                 const name = block.name ?? "tool";
                 const input = block.input;
                 let detail = name;
+                console.log(`[stream] tool_use: name=${name}, inputKeys=${input ? Object.keys(input).join(",") : "null"}`);
+                // Intercept AskUserQuestion tool calls
+                if (name === "AskUserQuestion" && input?.questions) {
+                  lastAskQuestions = input.questions as AskQuestion[];
+                  console.log(`[stream] AskUserQuestion intercepted: ${lastAskQuestions.length} questions`);
+                  detail = "AskUserQuestion: waiting for user input";
+                }
                 // Show relevant tool input details
                 if (input) {
                   if (input.file_path) detail = `${name}: ${input.file_path}`;
@@ -321,11 +413,154 @@ async function handleMessage(
     );
 
     // Save session mapping
-    store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name);
+    store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, msg.userName);
+
+    // Save token usage to database
+    if (result.inputTokens > 0 || result.outputTokens > 0) {
+      store.saveTokenUsage(
+        result.sessionId,
+        project.name,
+        project.model ?? null,
+        result.inputTokens,
+        result.outputTokens,
+        result.cacheReadTokens,
+        result.cacheCreationTokens,
+      );
+    }
+
+    // If AskUserQuestion was intercepted, send questions to user and wait for reply
+    if (lastAskQuestions) {
+      clearInterval(flushTimer);
+      const questionMsg = formatAskQuestions(lastAskQuestions);
+      await adapter.editMessage(threadId!, currentMessageId, questionMsg);
+
+      // Wait for user reply via pendingAsks map
+      const userAnswer = await new Promise<string>((resolve) => {
+        pendingAsks.set(threadKey, {
+          questions: lastAskQuestions!,
+          sessionId: result.sessionId,
+          channelId: msg.channelId,
+          threadId: threadId!,
+          resolve,
+        });
+      });
+
+      // Re-invoke Claude with the user's answer, resuming the session
+      const answerPrefix = platformHints[msg.platform] ? platformHints[msg.platform] + "\n\n" : "";
+      const answerMessage = `${answerPrefix}[AskUserQuestion Response]\n${userAnswer}\n\nPlease continue from where you left off with these answers.`;
+
+      // Show "thinking" while re-invoking
+      const thinkingId = await adapter.sendMessage(msg.channelId, threadId!, "⏳ _Thinking..._");
+      store.saveMessage(thinkingId, msg.platform, threadId!, true, "thinking...");
+
+      // Reset state for re-invoke
+      bufferedText = "";
+      activities.length = 0;
+      lastAskQuestions = null;
+      const startTime2 = Date.now();
+
+      const formatElapsed2 = (): string => {
+        const sec = Math.floor((Date.now() - startTime2) / 1000);
+        return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m${sec % 60}s`;
+      };
+
+      const flushTimer2 = setInterval(async () => {
+        const lastActivity = activities.length > 0 ? activities[activities.length - 1] : "thinking";
+        const statusLine = `_⏳ [${formatElapsed2()}] ${lastActivity}..._`;
+        const display = bufferedText
+          ? bufferedText.replace(/\n?\[react:.+\]\s*$/gm, "").trimEnd().slice(0, maxLen - statusLine.length - 10) + `\n\n${statusLine}`
+          : statusLine;
+        try {
+          await adapter.editMessage(threadId!, thinkingId, display);
+        } catch {}
+      }, flushInterval);
+
+      try {
+        const result2 = await sessionManager.invoke(
+          threadKey,
+          project.directory,
+          result.sessionId,
+          answerMessage,
+          (event) => {
+            const evt = event as any;
+            if (event.type === "assistant" && "message" in event) {
+              const content = evt.message?.content;
+              if (content) {
+                for (const block of content) {
+                  if (block.type === "text" && block.text) {
+                    bufferedText += block.text;
+                  } else if (block.type === "tool_use") {
+                    const name = block.name ?? "tool";
+                    const input = block.input;
+                    let detail = name;
+                    if (name === "AskUserQuestion" && input?.questions) {
+                      lastAskQuestions = input.questions as AskQuestion[];
+                    }
+                    if (input) {
+                      if (input.file_path) detail = `${name}: ${input.file_path}`;
+                      else if (input.command) detail = `${name}: \`${String(input.command).slice(0, 60)}\``;
+                      else if (input.pattern) detail = `${name}: ${input.pattern}`;
+                      else if (input.query) detail = `${name}: ${String(input.query).slice(0, 60)}`;
+                    }
+                    pushActivity(detail);
+                  }
+                }
+              }
+            }
+          },
+          undefined,
+          undefined,
+          project.model,
+        );
+
+        if (result2.inputTokens > 0 || result2.outputTokens > 0) {
+          store.saveTokenUsage(result2.sessionId, project.name, project.model ?? null,
+            result2.inputTokens, result2.outputTokens, result2.cacheReadTokens, result2.cacheCreationTokens);
+        }
+
+        const { cleanText: cleanText2, reactions: reactions2 } = formatter.extractReactions(result2.text);
+        const formatted2 = formatter.formatOutput(cleanText2, msg.platform);
+        const footer2 = `\n\n_✅ done [${formatElapsed2()}]_`;
+        if (formatted2.messages.length > 0) {
+          formatted2.messages[formatted2.messages.length - 1] += footer2;
+          await adapter.editMessage(threadId!, thinkingId, formatted2.messages[0]);
+        }
+        for (let i = 1; i < formatted2.messages.length; i++) {
+          const extraId = await adapter.sendMessage(msg.channelId, threadId!, formatted2.messages[i]);
+          store.saveMessage(extraId, msg.platform, threadId!, true, formatted2.messages[i].slice(0, 100));
+        }
+        for (const attachment of formatted2.attachments) {
+          await adapter.uploadFile(msg.channelId, threadId!, attachment.filename, attachment.content);
+        }
+        const imageAttachmentsOut2 = formatter.extractImages(cleanText2, project.directory);
+        for (const img of imageAttachmentsOut2) {
+          await adapter.uploadFile(msg.channelId, threadId!, img.filename, img.content);
+        }
+        for (const emoji of reactions2) {
+          await adapter.addReaction(threadId!, msg.messageId, emoji);
+        }
+        store.saveMessage(thinkingId, msg.platform, threadId!, true, cleanText2.slice(0, 200), result2.inputTokens, result2.outputTokens, result2.cacheReadTokens, result2.cacheCreationTokens);
+      } finally {
+        clearInterval(flushTimer2);
+      }
+
+      // Clean up temp files and return early — don't fall through to normal output
+      if (tempDir) {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+      return;
+    }
 
     // Format final output
     const { cleanText, reactions } = formatter.extractReactions(result.text);
     const formatted = formatter.formatOutput(cleanText, msg.platform);
+
+    // Append completion indicator with elapsed time to the last message chunk
+    const completionFooter = `\n\n_✅ done [${formatElapsed()}]_`;
+    const lastIdx = formatted.messages.length - 1;
+    if (lastIdx >= 0) {
+      formatted.messages[lastIdx] += completionFooter;
+    }
 
     // Update the message with final content
     if (formatted.messages.length > 0) {
@@ -355,7 +590,7 @@ async function handleMessage(
     }
 
     // Update message record
-    store.saveMessage(currentMessageId, msg.platform, threadId, true, cleanText.slice(0, 200));
+    store.saveMessage(currentMessageId, msg.platform, threadId, true, cleanText.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens);
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
