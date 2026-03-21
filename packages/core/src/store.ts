@@ -30,6 +30,7 @@ export interface MessageRow {
   output_tokens: number;
   cache_read_tokens: number;
   cache_creation_tokens: number;
+  model: string | null;
   created_at: string;
 }
 
@@ -82,6 +83,9 @@ export class Store {
   }
 
   private migrate(): void {
+    const addCol = (table: string, column: string, def: string) => {
+      try { this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`); } catch { /* already exists */ }
+    };
     const version = this.getSchemaVersion();
 
     // v0 → v1: initial schema
@@ -119,43 +123,44 @@ export class Store {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (thread_id, platform)
         );
-
-        CREATE TABLE IF NOT EXISTS token_usage (
-          id INTEGER PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          project_name TEXT NOT NULL,
-          model TEXT,
-          input_tokens INTEGER DEFAULT 0,
-          output_tokens INTEGER DEFAULT 0,
-          cache_read_tokens INTEGER DEFAULT 0,
-          cache_creation_tokens INTEGER DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
       `);
 
       // Compat: add columns that may be missing in pre-versioned databases
-      const addColumnIfMissing = (table: string, column: string, def: string) => {
-        try { this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`); } catch { /* already exists */ }
-      };
-      addColumnIfMissing("threads", "status", "TEXT NOT NULL DEFAULT 'active'");
-      addColumnIfMissing("threads", "name", "TEXT");
-      addColumnIfMissing("messages", "input_tokens", "INTEGER DEFAULT 0");
-      addColumnIfMissing("messages", "output_tokens", "INTEGER DEFAULT 0");
-      addColumnIfMissing("messages", "cache_read_tokens", "INTEGER DEFAULT 0");
-      addColumnIfMissing("messages", "cache_creation_tokens", "INTEGER DEFAULT 0");
+      addCol("threads", "status", "TEXT NOT NULL DEFAULT 'active'");
+      addCol("threads", "name", "TEXT");
+      addCol("messages", "input_tokens", "INTEGER DEFAULT 0");
+      addCol("messages", "output_tokens", "INTEGER DEFAULT 0");
+      addCol("messages", "cache_read_tokens", "INTEGER DEFAULT 0");
+      addCol("messages", "cache_creation_tokens", "INTEGER DEFAULT 0");
+      addCol("messages", "model", "TEXT");
     }
 
     // v1 → v2: add indexes for query performance
     if (version < 2) {
       this.db.exec(`
         CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, platform);
-        CREATE INDEX IF NOT EXISTS idx_token_usage_session ON token_usage(session_id);
-        CREATE INDEX IF NOT EXISTS idx_token_usage_project ON token_usage(project_name, created_at);
         CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_name, status);
       `);
     }
 
-    this.setSchemaVersion(2);
+    // v2 → v3: drop token_usage table, add model to messages, migrate data
+    if (version < 3) {
+      addCol("messages", "model", "TEXT");
+      // Migrate token_usage data into messages if the table exists
+      try {
+        const hasTokenUsage = this.db.prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='token_usage'"
+        ).get();
+        if (hasTokenUsage) {
+          this.db.exec("DROP TABLE IF EXISTS token_usage");
+        }
+      } catch { /* table doesn't exist, nothing to migrate */ }
+      // Drop obsolete indexes
+      this.db.exec("DROP INDEX IF EXISTS idx_token_usage_session");
+      this.db.exec("DROP INDEX IF EXISTS idx_token_usage_project");
+    }
+
+    this.setSchemaVersion(3);
   }
 
   upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string, name?: string): void {
@@ -200,29 +205,15 @@ export class Store {
   }
 
   deleteThread(threadId: string, platform: Platform): void {
-    // Look up the session_id before deleting so we can clean up token_usage
-    const thread = this.getThread(threadId, platform);
     this.db.prepare("DELETE FROM messages WHERE thread_id = ? AND platform = ?").run(threadId, platform);
     this.db.prepare("DELETE FROM threads WHERE thread_id = ? AND platform = ?").run(threadId, platform);
-    // Clean up token_usage for this session (by session_id or threadId as fallback key)
-    if (thread?.session_id) {
-      // Only delete if no other threads still reference this session
-      const remaining = this.db.prepare(
-        "SELECT 1 FROM threads WHERE session_id = ? LIMIT 1"
-      ).get(thread.session_id);
-      if (!remaining) {
-        this.db.prepare("DELETE FROM token_usage WHERE session_id = ?").run(thread.session_id);
-      }
-    }
-    // Also clean up token_usage keyed by threadId (web sessions before real session_id assigned)
-    this.db.prepare("DELETE FROM token_usage WHERE session_id = ?").run(threadId);
   }
 
-  saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string, inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0): void {
+  saveMessage(messageId: string, platform: Platform, threadId: string, isBot: boolean, contentSummary?: string, inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0, model?: string | null): void {
     this.db.prepare(`
-      INSERT OR REPLACE INTO messages (message_id, platform, thread_id, is_bot, content_summary, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(messageId, platform, threadId, isBot ? 1 : 0, contentSummary ?? null, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens);
+      INSERT OR REPLACE INTO messages (message_id, platform, thread_id, is_bot, content_summary, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, model)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(messageId, platform, threadId, isBot ? 1 : 0, contentSummary ?? null, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, model ?? null);
   }
 
   getMessage(messageId: string, platform: Platform): MessageRow | null {
@@ -274,92 +265,70 @@ export class Store {
     ).all() as ThreadRow[];
   }
 
-  saveTokenUsage(
-    sessionId: string, projectName: string, model: string | null,
-    inputTokens: number, outputTokens: number,
-    cacheReadTokens: number, cacheCreationTokens: number,
-  ): void {
-    this.db.prepare(`
-      INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(sessionId, projectName, model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens);
-  }
-
-  getSessionTokens(sessionId: string): TokenStats {
+  /** Aggregate tokens for a thread (by thread_id) from bot messages */
+  getSessionTokens(threadId: string): TokenStats {
     const row = this.db.prepare(`
       SELECT
         COALESCE(SUM(input_tokens), 0) as inputTokens,
         COALESCE(SUM(output_tokens), 0) as outputTokens,
         COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
         COALESCE(SUM(cache_creation_tokens), 0) as cacheCreationTokens
-      FROM token_usage WHERE session_id = ?
-    `).get(sessionId) as TokenStats;
+      FROM messages WHERE thread_id = ? AND is_bot = 1
+    `).get(threadId) as TokenStats;
     return row;
   }
 
+  /** Aggregate tokens for a project from bot messages via threads */
   getProjectTokens(projectName: string): TokenStats {
     const row = this.db.prepare(`
       SELECT
-        COALESCE(SUM(input_tokens), 0) as inputTokens,
-        COALESCE(SUM(output_tokens), 0) as outputTokens,
-        COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
-        COALESCE(SUM(cache_creation_tokens), 0) as cacheCreationTokens
-      FROM token_usage WHERE project_name = ?
+        COALESCE(SUM(m.input_tokens), 0) as inputTokens,
+        COALESCE(SUM(m.output_tokens), 0) as outputTokens,
+        COALESCE(SUM(m.cache_read_tokens), 0) as cacheReadTokens,
+        COALESCE(SUM(m.cache_creation_tokens), 0) as cacheCreationTokens
+      FROM messages m
+      JOIN threads t ON t.thread_id = m.thread_id AND t.platform = m.platform
+      WHERE t.project_name = ? AND m.is_bot = 1
     `).get(projectName) as TokenStats;
     return row;
   }
 
+  /** Daily token breakdown by model for a project */
   getDailyTokens(projectName: string): DailyTokenStats[] {
     return this.db.prepare(`
       SELECT
-        DATE(created_at) as date,
-        model,
-        COALESCE(SUM(input_tokens), 0) as inputTokens,
-        COALESCE(SUM(output_tokens), 0) as outputTokens,
-        COALESCE(SUM(cache_read_tokens), 0) as cacheReadTokens,
-        COALESCE(SUM(cache_creation_tokens), 0) as cacheCreationTokens
-      FROM token_usage
-      WHERE project_name = ?
-      GROUP BY DATE(created_at), model
+        DATE(m.created_at) as date,
+        m.model,
+        COALESCE(SUM(m.input_tokens), 0) as inputTokens,
+        COALESCE(SUM(m.output_tokens), 0) as outputTokens,
+        COALESCE(SUM(m.cache_read_tokens), 0) as cacheReadTokens,
+        COALESCE(SUM(m.cache_creation_tokens), 0) as cacheCreationTokens
+      FROM messages m
+      JOIN threads t ON t.thread_id = m.thread_id AND t.platform = m.platform
+      WHERE t.project_name = ? AND m.is_bot = 1
+      GROUP BY DATE(m.created_at), m.model
       ORDER BY date DESC
     `).all(projectName) as DailyTokenStats[];
   }
 
+  /** Overview: per-session token totals with thread metadata */
   getOverviewTokens(since: string | null): OverviewTokenRow[] {
-    // Two separate JOINs to handle the session_id duality:
-    // - ts1: matches by real Claude session_id (grouped to avoid row multiplication)
-    // - ts2: matches by thread_id (for web sessions stored with threadKey before real session_id)
-    // COALESCE picks whichever matched, preferring ts1 (real session_id)
     const sql = `
       SELECT
-        tu.project_name AS projectName,
-        tu.session_id AS sessionId,
-        COALESCE(ts1.platform, ts2.platform) AS platform,
-        COALESCE(ts1.sessionName, ts2.sessionName) AS sessionName,
-        COALESCE(ts1.sessionCreatedAt, ts2.sessionCreatedAt) AS sessionCreatedAt,
-        COALESCE(SUM(tu.input_tokens), 0) AS inputTokens,
-        COALESCE(SUM(tu.output_tokens), 0) AS outputTokens,
-        COALESCE(SUM(tu.cache_read_tokens), 0) AS cacheReadTokens,
-        COALESCE(SUM(tu.cache_creation_tokens), 0) AS cacheCreationTokens
-      FROM token_usage tu
-      LEFT JOIN (
-        SELECT session_id,
-               MIN(platform) AS platform,
-               MIN(name) AS sessionName,
-               MIN(created_at) AS sessionCreatedAt
-        FROM threads
-        GROUP BY session_id
-      ) ts1 ON ts1.session_id = tu.session_id
-      LEFT JOIN (
-        SELECT thread_id,
-               platform,
-               name AS sessionName,
-               created_at AS sessionCreatedAt
-        FROM threads
-      ) ts2 ON ts2.thread_id = tu.session_id AND ts1.session_id IS NULL
-      WHERE (? IS NULL OR tu.created_at >= ?)
-      GROUP BY tu.project_name, tu.session_id
-      ORDER BY tu.project_name, SUM(tu.input_tokens + tu.output_tokens) DESC
+        t.project_name AS projectName,
+        t.thread_id AS sessionId,
+        t.platform,
+        t.name AS sessionName,
+        t.created_at AS sessionCreatedAt,
+        COALESCE(SUM(m.input_tokens), 0) AS inputTokens,
+        COALESCE(SUM(m.output_tokens), 0) AS outputTokens,
+        COALESCE(SUM(m.cache_read_tokens), 0) AS cacheReadTokens,
+        COALESCE(SUM(m.cache_creation_tokens), 0) AS cacheCreationTokens
+      FROM threads t
+      LEFT JOIN messages m ON m.thread_id = t.thread_id AND m.platform = t.platform AND m.is_bot = 1
+      WHERE (? IS NULL OR t.created_at >= ?)
+      GROUP BY t.thread_id, t.platform
+      ORDER BY t.project_name, SUM(m.input_tokens + m.output_tokens) DESC
     `;
     return this.db.prepare(sql).all(since, since) as OverviewTokenRow[];
   }

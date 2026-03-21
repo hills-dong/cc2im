@@ -320,41 +320,32 @@ describe("listSessions", () => {
   });
 });
 
-// ── saveTokenUsage ───────────────────────────────────────────────────
-
-describe("saveTokenUsage", () => {
-  it("23: null model accepted", () => {
-    const store = createStore();
-    expect(() => store.saveTokenUsage("s1", "p1", null, 100, 50, 10, 5)).not.toThrow();
-    const stats = store.getSessionTokens("s1");
-    expect(stats.inputTokens).toBe(100);
-    store.close();
-  });
-
-  it("24: zero token values accepted", () => {
-    const store = createStore();
-    store.saveTokenUsage("s1", "p1", "gpt", 0, 0, 0, 0);
-    const stats = store.getSessionTokens("s1");
-    expect(stats.inputTokens).toBe(0);
-    expect(stats.outputTokens).toBe(0);
-    expect(stats.cacheReadTokens).toBe(0);
-    expect(stats.cacheCreationTokens).toBe(0);
-    store.close();
-  });
-});
-
 // ── getSessionTokens ─────────────────────────────────────────────────
 
 describe("getSessionTokens", () => {
-  it("25: does not leak tokens from other sessions", () => {
+  it("23: does not leak tokens from other threads", () => {
     const store = createStore();
-    store.saveTokenUsage("sess-1", "p", "m", 100, 200, 300, 400);
-    store.saveTokenUsage("sess-2", "p", "m", 1000, 2000, 3000, 4000);
-    const stats = store.getSessionTokens("sess-1");
+    store.upsertThread("thread-1", "web" as Platform, "ch-1", "sess-1", "p");
+    store.upsertThread("thread-2", "web" as Platform, "ch-2", "sess-2", "p");
+    store.saveMessage("msg-1", "web" as Platform, "thread-1", true, "r", 100, 200, 300, 400, "m");
+    store.saveMessage("msg-2", "web" as Platform, "thread-2", true, "r", 1000, 2000, 3000, 4000, "m");
+    const stats = store.getSessionTokens("thread-1");
     expect(stats.inputTokens).toBe(100);
     expect(stats.outputTokens).toBe(200);
     expect(stats.cacheReadTokens).toBe(300);
     expect(stats.cacheCreationTokens).toBe(400);
+    store.close();
+  });
+
+  it("24: zero token values accepted via saveMessage", () => {
+    const store = createStore();
+    store.upsertThread("thread-1", "web" as Platform, "ch-1", "sess-1", "p");
+    store.saveMessage("msg-1", "web" as Platform, "thread-1", true, "r", 0, 0, 0, 0, "gpt");
+    const stats = store.getSessionTokens("thread-1");
+    expect(stats.inputTokens).toBe(0);
+    expect(stats.outputTokens).toBe(0);
+    expect(stats.cacheReadTokens).toBe(0);
+    expect(stats.cacheCreationTokens).toBe(0);
     store.close();
   });
 });
@@ -384,9 +375,9 @@ describe("getDailyTokens", () => {
 
   it("28: groups by date and model", () => {
     const store = createStore();
-    // Insert two rows with different models (same day since both inserted now)
-    store.saveTokenUsage("s1", "proj", "model-a", 10, 20, 30, 40);
-    store.saveTokenUsage("s1", "proj", "model-b", 50, 60, 70, 80);
+    store.upsertThread("thread-1", "web" as Platform, "ch-1", "sess-1", "proj");
+    store.saveMessage("msg-1", "web" as Platform, "thread-1", true, "r", 10, 20, 30, 40, "model-a");
+    store.saveMessage("msg-2", "web" as Platform, "thread-1", true, "r", 50, 60, 70, 80, "model-b");
     const daily = store.getDailyTokens("proj");
     expect(daily.length).toBe(2);
     const models = daily.map((d) => d.model).sort();
@@ -421,14 +412,13 @@ describe("lifecycle", () => {
 
     const s1 = createStore(p);
     s1.upsertThread("t1", "discord" as Platform, "ch", "sess", "myproj");
-    s1.saveMessage("m1", "discord" as Platform, "t1", true, "bot reply");
-    s1.saveTokenUsage("sess", "myproj", "claude", 100, 200, 50, 25);
+    s1.saveMessage("m1", "discord" as Platform, "t1", true, "bot reply", 100, 200, 50, 25, "claude");
     s1.close();
 
     const s2 = new Store(p);
     expect(s2.getThread("t1", "discord" as Platform)).not.toBeNull();
     expect(s2.getMessage("m1", "discord" as Platform)!.content_summary).toBe("bot reply");
-    const tokens = s2.getSessionTokens("sess");
+    const tokens = s2.getSessionTokens("t1");
     expect(tokens.inputTokens).toBe(100);
     expect(tokens.outputTokens).toBe(200);
     s2.close();

@@ -43,6 +43,9 @@ function sendToSubscribers(subscriptions: Map<string, Set<WebSocket>>, threadKey
   }
 }
 
+// Tracks accumulated streaming text per thread for recovery on reconnect
+const streamBuffers = new Map<string, string>();
+
 async function handleChatSend(
   ws: WebSocket,
   clients: Set<WebSocket>,
@@ -91,6 +94,9 @@ async function handleChatSend(
       ctx.store.upsertThread(threadKey, "web", `web:${payload.project}`, "", payload.project, payload.message.slice(0, 50));
     }
 
+    // Initialize stream buffer for this thread
+    streamBuffers.set(threadKey, "");
+
     const result = await sessionManager.invoke(
       threadKey,
       project.directory,
@@ -103,6 +109,10 @@ async function handleChatSend(
           if (msg?.content) {
             for (const block of msg.content) {
               if (block.type === "text" && block.text) {
+                // Accumulate in buffer for recovery on reconnect
+                const prev = streamBuffers.get(threadKey) ?? "";
+                streamBuffers.set(threadKey, prev + block.text);
+
                 sendToSubscribers(subscriptions, threadKey, {
                   type: "chat.stream",
                   sessionId: threadKey,
@@ -119,18 +129,8 @@ async function handleChatSend(
       payload.model ?? project.model,
     );
 
-    // Save token usage to database (prefer real Claude session ID for JOIN with threads table)
-    if (result.inputTokens > 0 || result.outputTokens > 0) {
-      ctx.store.saveTokenUsage(
-        result.sessionId || threadKey,
-        payload.project,
-        payload.model ?? null,
-        result.inputTokens,
-        result.outputTokens,
-        result.cacheReadTokens,
-        result.cacheCreationTokens,
-      );
-    }
+    // Clear stream buffer — response is complete
+    streamBuffers.delete(threadKey);
 
     sendToSubscribers(subscriptions, threadKey, {
       type: "chat.done",
@@ -140,9 +140,9 @@ async function handleChatSend(
       tokens: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, cacheReadTokens: result.cacheReadTokens, cacheCreationTokens: result.cacheCreationTokens },
     });
 
-    // Save assistant message and update thread with real session ID
+    // Save assistant message (with tokens) and update thread with real session ID
     const botMsgId = `web-${threadKey}-bot-${Date.now()}`;
-    ctx.store.saveMessage(botMsgId, "web", threadKey, true, result.text.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens);
+    ctx.store.saveMessage(botMsgId, "web", threadKey, true, result.text.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens, payload.model ?? project.model);
     ctx.store.upsertThread(threadKey, "web", `web:${payload.project}`, result.sessionId || "", payload.project);
 
     // Notify sidebar of new/updated session (deferred to next tick to avoid racing with chat.done handlers)
@@ -155,6 +155,7 @@ async function handleChatSend(
       });
     }, 0);
   } catch (err: unknown) {
+    streamBuffers.delete(threadKey);
     sendToSubscribers(subscriptions, threadKey, {
       type: "chat.error",
       sessionId: threadKey,
@@ -226,6 +227,16 @@ export function attachWebSocket(server: http.Server, ctx: WsContext): WebSocketS
           if (threadKey) {
             if (!subscriptions.has(threadKey)) subscriptions.set(threadKey, new Set());
             subscriptions.get(threadKey)!.add(ws);
+
+            // If there's an active stream for this thread, send buffered content for recovery
+            const buffered = streamBuffers.get(threadKey);
+            if (buffered !== undefined) {
+              send(ws, {
+                type: "chat.recover",
+                sessionId: threadKey,
+                content: buffered,
+              });
+            }
           }
           break;
         }

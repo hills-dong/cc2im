@@ -4,7 +4,7 @@ import { unlinkSync } from "fs";
 
 const TEST_DB = "test-tokens.db";
 
-describe("Store token_usage", () => {
+describe("Store token stats from messages", () => {
   let store: Store;
 
   beforeEach(() => {
@@ -18,11 +18,12 @@ describe("Store token_usage", () => {
     try { unlinkSync(TEST_DB + "-shm"); } catch {}
   });
 
-  it("saves and retrieves token usage for a session", () => {
-    store.saveTokenUsage("sess-1", "my-project", "claude-opus", 100, 50, 1000, 200);
-    store.saveTokenUsage("sess-1", "my-project", "claude-opus", 80, 40, 800, 100);
+  it("saves and retrieves token usage for a session (thread)", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "my-project");
+    store.saveMessage("msg-1", "web", "thread-1", true, "response1", 100, 50, 1000, 200, "claude-opus");
+    store.saveMessage("msg-2", "web", "thread-1", true, "response2", 80, 40, 800, 100, "claude-opus");
 
-    const stats = store.getSessionTokens("sess-1");
+    const stats = store.getSessionTokens("thread-1");
     expect(stats.inputTokens).toBe(180);
     expect(stats.outputTokens).toBe(90);
     expect(stats.cacheReadTokens).toBe(1800);
@@ -30,9 +31,12 @@ describe("Store token_usage", () => {
   });
 
   it("aggregates token usage by project", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 0, 0);
-    store.saveTokenUsage("sess-2", "proj-a", "opus", 200, 100, 0, 0);
-    store.saveTokenUsage("sess-3", "proj-b", "opus", 300, 150, 0, 0);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.upsertThread("thread-2", "web", "ch-2", "sess-2", "proj-a");
+    store.upsertThread("thread-3", "web", "ch-3", "sess-3", "proj-b");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
+    store.saveMessage("msg-2", "web", "thread-2", true, "r", 200, 100, 0, 0, "opus");
+    store.saveMessage("msg-3", "web", "thread-3", true, "r", 300, 150, 0, 0, "opus");
 
     const projA = store.getProjectTokens("proj-a");
     expect(projA.inputTokens).toBe(300);
@@ -43,7 +47,8 @@ describe("Store token_usage", () => {
   });
 
   it("returns daily token breakdown for a project", () => {
-    store.saveTokenUsage("s1", "proj", "opus", 100, 50, 0, 0);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
     const daily = store.getDailyTokens("proj");
     expect(daily.length).toBeGreaterThanOrEqual(1);
     expect(daily[0].inputTokens).toBe(100);
@@ -54,6 +59,18 @@ describe("Store token_usage", () => {
     const stats = store.getSessionTokens("nonexistent");
     expect(stats.inputTokens).toBe(0);
     expect(stats.outputTokens).toBe(0);
+  });
+
+  it("does not count user messages in token aggregations", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-bot", "web", "thread-1", true, "bot reply", 100, 50, 10, 5, "opus");
+    store.saveMessage("msg-user", "web", "thread-1", false, "user msg", 999, 999, 999, 999);
+
+    const stats = store.getSessionTokens("thread-1");
+    expect(stats.inputTokens).toBe(100);
+    expect(stats.outputTokens).toBe(50);
+    expect(stats.cacheReadTokens).toBe(10);
+    expect(stats.cacheCreationTokens).toBe(5);
   });
 });
 
@@ -71,10 +88,12 @@ describe("getOverviewTokens", () => {
     try { unlinkSync(TEST_DB + "-shm"); } catch {}
   });
 
-  it("returns aggregated token_usage records for all sessions when since=null", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 200, 100, 20, 10);
-    store.saveTokenUsage("sess-2", "proj-b", "opus", 300, 150, 30, 15);
+  it("returns aggregated token records for all threads when since=null", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.upsertThread("thread-2", "web", "ch-2", "sess-2", "proj-b");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r1", 100, 50, 10, 5, "opus");
+    store.saveMessage("msg-2", "web", "thread-1", true, "r2", 200, 100, 20, 10, "opus");
+    store.saveMessage("msg-3", "web", "thread-2", true, "r3", 300, 150, 30, 15, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(2);
@@ -91,23 +110,27 @@ describe("getOverviewTokens", () => {
 
   it("returns only records after the specified since time", () => {
     const db = (store as any).db;
+    // Insert threads with explicit created_at
     db.prepare(
-      "INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("sess-old", "proj-a", "opus", 100, 50, 0, 0, "2026-03-17T00:00:00");
+      "INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("thread-old", "web", "ch-1", "sess-old", "proj-a", "2026-03-17T00:00:00");
     db.prepare(
-      "INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("sess-new", "proj-a", "opus", 200, 100, 0, 0, "2026-03-18T12:00:00");
+      "INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("thread-new", "web", "ch-2", "sess-new", "proj-a", "2026-03-18T12:00:00");
+    store.saveMessage("msg-old", "web", "thread-old", true, "r", 100, 50, 0, 0, "opus");
+    store.saveMessage("msg-new", "web", "thread-new", true, "r", 200, 100, 0, 0, "opus");
 
     const rows = store.getOverviewTokens("2026-03-18T00:00:00");
     expect(rows).toHaveLength(1);
-    expect(rows[0].sessionId).toBe("sess-new");
+    expect(rows[0].sessionId).toBe("thread-new");
     expect(rows[0].inputTokens).toBe(200);
   });
 
-  it("correctly aggregates multiple token_usage records for the same session", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 200, 100, 20, 10);
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 300, 150, 30, 15);
+  it("correctly aggregates multiple bot messages for the same thread", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r1", 100, 50, 10, 5, "opus");
+    store.saveMessage("msg-2", "web", "thread-1", true, "r2", 200, 100, 20, 10, "opus");
+    store.saveMessage("msg-3", "web", "thread-1", true, "r3", 300, 150, 30, 15, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
@@ -117,9 +140,11 @@ describe("getOverviewTokens", () => {
     expect(rows[0].cacheCreationTokens).toBe(30);
   });
 
-  it("groups by project_name so sessions from different projects do not mix", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 0, 0);
-    store.saveTokenUsage("sess-2", "proj-b", "opus", 200, 100, 0, 0);
+  it("groups by project_name so threads from different projects do not mix", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.upsertThread("thread-2", "web", "ch-2", "sess-2", "proj-b");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
+    store.saveMessage("msg-2", "web", "thread-2", true, "r", 200, 100, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(2);
@@ -128,20 +153,24 @@ describe("getOverviewTokens", () => {
     expect(projectNames).toContain("proj-b");
   });
 
-  it("sorts sessions within the same project by total tokens descending", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 0, 0);
-    store.saveTokenUsage("sess-2", "proj-a", "opus", 500, 200, 0, 0);
+  it("sorts threads within the same project by total tokens descending", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.upsertThread("thread-2", "web", "ch-2", "sess-2", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
+    store.saveMessage("msg-2", "web", "thread-2", true, "r", 500, 200, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(2);
-    // sess-2 (700 total) should come before sess-1 (150 total)
-    expect(rows[0].sessionId).toBe("sess-2");
-    expect(rows[1].sessionId).toBe("sess-1");
+    // thread-2 (700 total) should come before thread-1 (150 total)
+    expect(rows[0].sessionId).toBe("thread-2");
+    expect(rows[1].sessionId).toBe("thread-1");
   });
 
   it("sorts different projects by project_name ascending", () => {
-    store.saveTokenUsage("sess-1", "beta", "opus", 100, 50, 0, 0);
-    store.saveTokenUsage("sess-2", "alpha", "opus", 200, 100, 0, 0);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "beta");
+    store.upsertThread("thread-2", "web", "ch-2", "sess-2", "alpha");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
+    store.saveMessage("msg-2", "web", "thread-2", true, "r", 200, 100, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(2);
@@ -149,35 +178,41 @@ describe("getOverviewTokens", () => {
     expect(rows[1].projectName).toBe("beta");
   });
 
-  it("returns platform/sessionName/sessionCreatedAt from thread when thread exists", () => {
+  it("returns platform/sessionName/sessionCreatedAt from thread", () => {
     store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a", "my-session");
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 0, 0);
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
-    expect(rows[0].platform).not.toBeNull();
-    expect(rows[0].sessionName).not.toBeNull();
+    expect(rows[0].platform).toBe("web");
+    expect(rows[0].sessionName).toBe("my-session");
     expect(rows[0].sessionCreatedAt).not.toBeNull();
   });
 
-  it("returns null for platform/sessionName/sessionCreatedAt when no thread exists", () => {
-    store.saveTokenUsage("sess-no-thread", "proj-a", "opus", 100, 50, 0, 0);
+  it("returns thread with zero tokens when no bot messages exist", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
-    expect(rows[0].platform).toBeNull();
-    expect(rows[0].sessionName).toBeNull();
-    expect(rows[0].sessionCreatedAt).toBeNull();
+    expect(rows[0].inputTokens).toBe(0);
+    expect(rows[0].outputTokens).toBe(0);
+    expect(rows[0].cacheReadTokens).toBe(0);
+    expect(rows[0].cacheCreationTokens).toBe(0);
   });
 
-  it("does not duplicate token counts when multiple threads share the same session_id", () => {
+  it("returns separate rows for same thread_id on different platforms", () => {
     store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a", "chat-1");
-    store.upsertThread("thread-2", "discord", "ch-2", "sess-1", "proj-a", "chat-2");
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
+    store.upsertThread("thread-1", "discord", "ch-2", "sess-1", "proj-a", "chat-2");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 10, 5, "opus");
+    store.saveMessage("msg-2", "discord", "thread-1", true, "r", 200, 100, 20, 10, "opus");
 
     const rows = store.getOverviewTokens(null);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].inputTokens).toBe(100);
+    expect(rows).toHaveLength(2);
+    // Each row should have its own token counts
+    const webRow = rows.find((r: any) => r.platform === "web");
+    const discordRow = rows.find((r: any) => r.platform === "discord");
+    expect(webRow!.inputTokens).toBe(100);
+    expect(discordRow!.inputTokens).toBe(200);
   });
 
   it("returns an empty array when the database is empty", () => {
@@ -188,8 +223,9 @@ describe("getOverviewTokens", () => {
   it("includes records where created_at equals since (>= semantics)", () => {
     const db = (store as any).db;
     db.prepare(
-      "INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("sess-1", "proj-a", "opus", 100, 50, 0, 0, "2026-03-18T10:00:00");
+      "INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("thread-1", "web", "ch-1", "sess-1", "proj-a", "2026-03-18T10:00:00");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
 
     const rows = store.getOverviewTokens("2026-03-18T10:00:00");
     expect(rows).toHaveLength(1);
@@ -198,15 +234,17 @@ describe("getOverviewTokens", () => {
   it("returns an empty array when since is later than all records", () => {
     const db = (store as any).db;
     db.prepare(
-      "INSERT INTO token_usage (session_id, project_name, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("sess-1", "proj-a", "opus", 100, 50, 0, 0, "2026-03-17T00:00:00");
+      "INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("thread-1", "web", "ch-1", "sess-1", "proj-a", "2026-03-17T00:00:00");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
 
     const rows = store.getOverviewTokens("2026-03-19T00:00:00");
     expect(rows).toEqual([]);
   });
 
   it("returns 0 for all token fields when all values are 0", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 0, 0, 0, 0);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 0, 0, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
@@ -218,7 +256,7 @@ describe("getOverviewTokens", () => {
 
   it("returns objects with all OverviewTokenRow fields", () => {
     store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a", "my-session");
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 10, 5, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
@@ -235,7 +273,8 @@ describe("getOverviewTokens", () => {
   });
 
   it("returns token fields as numbers not strings", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 10, 5, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
@@ -245,12 +284,15 @@ describe("getOverviewTokens", () => {
     expect(typeof rows[0].cacheCreationTokens).toBe("number");
   });
 
-  it("correctly aggregates across multiple projects with multiple sessions each", () => {
+  it("correctly aggregates across multiple projects with multiple threads each", () => {
     const projects = ["alpha", "beta", "gamma"];
+    let msgId = 0;
     for (const proj of projects) {
       for (let s = 1; s <= 2; s++) {
+        store.upsertThread(`${proj}-thread-${s}`, "web", `ch-${proj}-${s}`, `sess-${proj}-${s}`, proj);
         for (let r = 0; r < 3; r++) {
-          store.saveTokenUsage(`${proj}-sess-${s}`, proj, "opus", 10 * s, 5 * s, 1, 1);
+          msgId++;
+          store.saveMessage(`msg-${msgId}`, "web", `${proj}-thread-${s}`, true, "r", 10 * s, 5 * s, 1, 1, "opus");
         }
       }
     }
@@ -266,46 +308,32 @@ describe("getOverviewTokens", () => {
     expect(rows[4].projectName).toBe("gamma");
     expect(rows[5].projectName).toBe("gamma");
 
-    // Within each project, sess-2 (higher tokens) should come first
+    // Within each project, thread-2 (higher tokens) should come first
     for (let i = 0; i < 6; i += 2) {
-      expect(rows[i].sessionId).toContain("sess-2");
-      expect(rows[i + 1].sessionId).toContain("sess-1");
+      expect(rows[i].sessionId).toContain("thread-2");
+      expect(rows[i + 1].sessionId).toContain("thread-1");
     }
 
-    // Verify aggregation: sess-1 has 3 records * 10 input = 30
-    const alphaSess1 = rows.find((r: any) => r.projectName === "alpha" && r.sessionId === "alpha-sess-1");
+    // Verify aggregation: thread-1 has 3 messages * 10 input = 30
+    const alphaSess1 = rows.find((r: any) => r.projectName === "alpha" && r.sessionId === "alpha-thread-1");
     expect(alphaSess1!.inputTokens).toBe(30);
     expect(alphaSess1!.outputTokens).toBe(15);
   });
 
-  it("aggregates separately when the same session_id appears under different projects", () => {
-    store.saveTokenUsage("shared-sess", "proj-a", "opus", 100, 50, 0, 0);
-    store.saveTokenUsage("shared-sess", "proj-b", "opus", 200, 100, 0, 0);
-
-    const rows = store.getOverviewTokens(null);
-    expect(rows).toHaveLength(2);
-    const projA = rows.find((r: any) => r.projectName === "proj-a");
-    const projB = rows.find((r: any) => r.projectName === "proj-b");
-    expect(projA!.sessionId).toBe("shared-sess");
-    expect(projB!.sessionId).toBe("shared-sess");
-    expect(projA!.inputTokens).toBe(100);
-    expect(projB!.inputTokens).toBe(200);
-  });
-
-  it("selects MIN(platform), MIN(name), MIN(created_at) when multiple threads exist for a session", () => {
-    store.upsertThread("thread-1", "discord", "ch-1", "sess-1", "proj-a", "chat-b");
-    store.upsertThread("thread-2", "web", "ch-2", "sess-1", "proj-a", "chat-a");
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 0, 0);
+  it("sessionId is now thread_id, not session_id from token_usage", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
-    expect(rows[0].platform).toBe("discord"); // MIN of "discord", "web"
-    expect(rows[0].sessionName).toBe("chat-a"); // MIN of "chat-a", "chat-b"
+    expect(rows[0].sessionId).toBe("thread-1"); // thread_id, not sess-1
   });
 
   it("returns identical results on consecutive calls (idempotent)", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
-    store.saveTokenUsage("sess-2", "proj-b", "opus", 200, 100, 20, 10);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.upsertThread("thread-2", "web", "ch-2", "sess-2", "proj-b");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 10, 5, "opus");
+    store.saveMessage("msg-2", "web", "thread-2", true, "r", 200, 100, 20, 10, "opus");
 
     const result1 = store.getOverviewTokens(null);
     const result2 = store.getOverviewTokens(null);
@@ -313,35 +341,37 @@ describe("getOverviewTokens", () => {
   });
 
   it("does not modify the database (no side effects)", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 10, 5, "opus");
     const db = (store as any).db;
 
-    const countBefore = db.prepare("SELECT COUNT(*) as cnt FROM token_usage").get().cnt;
+    const countBefore = db.prepare("SELECT COUNT(*) as cnt FROM messages").get().cnt;
     store.getOverviewTokens(null);
-    const countAfter = db.prepare("SELECT COUNT(*) as cnt FROM token_usage").get().cnt;
+    const countAfter = db.prepare("SELECT COUNT(*) as cnt FROM messages").get().cnt;
 
     expect(countAfter).toBe(countBefore);
   });
 
-  it("reads data written by saveTokenUsage immediately", () => {
-    store.saveTokenUsage("sess-1", "proj-a", "opus", 100, 50, 10, 5);
+  it("reads data written by saveMessage immediately", () => {
+    store.upsertThread("thread-1", "web", "ch-1", "sess-1", "proj-a");
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 10, 5, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
-    expect(rows[0].sessionId).toBe("sess-1");
+    expect(rows[0].sessionId).toBe("thread-1");
     expect(rows[0].projectName).toBe("proj-a");
     expect(rows[0].inputTokens).toBe(100);
   });
 
-  it("joins correctly after upsertThread updates the session_id of a thread", () => {
+  it("reflects thread metadata updates after upsertThread", () => {
     store.upsertThread("thread-1", "web", "ch-1", "s1", "proj-a", "my-session");
-    // Update the same thread to point to s2
+    // Update the same thread to change session_id
     store.upsertThread("thread-1", "web", "ch-1", "s2", "proj-a", "my-session");
-    store.saveTokenUsage("s2", "proj-a", "opus", 100, 50, 0, 0);
+    store.saveMessage("msg-1", "web", "thread-1", true, "r", 100, 50, 0, 0, "opus");
 
     const rows = store.getOverviewTokens(null);
     expect(rows).toHaveLength(1);
-    expect(rows[0].sessionId).toBe("s2");
+    expect(rows[0].sessionId).toBe("thread-1"); // always thread_id
     expect(rows[0].platform).toBe("web");
     expect(rows[0].sessionName).toBe("my-session");
   });

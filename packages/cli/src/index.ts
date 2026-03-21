@@ -415,19 +415,6 @@ async function handleMessage(
     // Save session mapping
     store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, msg.userName);
 
-    // Save token usage to database
-    if (result.inputTokens > 0 || result.outputTokens > 0) {
-      store.saveTokenUsage(
-        result.sessionId,
-        project.name,
-        project.model ?? null,
-        result.inputTokens,
-        result.outputTokens,
-        result.cacheReadTokens,
-        result.cacheCreationTokens,
-      );
-    }
-
     // If AskUserQuestion was intercepted, send questions to user and wait for reply
     if (lastAskQuestions) {
       clearInterval(flushTimer);
@@ -513,10 +500,7 @@ async function handleMessage(
           project.model,
         );
 
-        if (result2.inputTokens > 0 || result2.outputTokens > 0) {
-          store.saveTokenUsage(result2.sessionId, project.name, project.model ?? null,
-            result2.inputTokens, result2.outputTokens, result2.cacheReadTokens, result2.cacheCreationTokens);
-        }
+
 
         const { cleanText: cleanText2, reactions: reactions2 } = formatter.extractReactions(result2.text);
         const formatted2 = formatter.formatOutput(cleanText2, msg.platform);
@@ -539,7 +523,7 @@ async function handleMessage(
         for (const emoji of reactions2) {
           await adapter.addReaction(threadId!, msg.messageId, emoji);
         }
-        store.saveMessage(thinkingId, msg.platform, threadId!, true, cleanText2.slice(0, 200), result2.inputTokens, result2.outputTokens, result2.cacheReadTokens, result2.cacheCreationTokens);
+        store.saveMessage(thinkingId, msg.platform, threadId!, true, cleanText2.slice(0, 200), result2.inputTokens, result2.outputTokens, result2.cacheReadTokens, result2.cacheCreationTokens, project.model);
       } finally {
         clearInterval(flushTimer2);
       }
@@ -590,7 +574,7 @@ async function handleMessage(
     }
 
     // Update message record
-    store.saveMessage(currentMessageId, msg.platform, threadId, true, cleanText.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens);
+    store.saveMessage(currentMessageId, msg.platform, threadId, true, cleanText.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens, project.model);
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
