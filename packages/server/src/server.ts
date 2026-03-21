@@ -2,13 +2,12 @@ import http from "http";
 import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
-import { loadConfig, SessionManager } from "@cc2im/core";
+import { loadConfig } from "@cc2im/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 import { Store } from "@cc2im/core";
 import { handleApi } from "./api.js";
 import type { ApiContext } from "./api.js";
-import { attachWebSocket } from "./ws.js";
 
 export interface ServerOptions {
   port: number;
@@ -16,9 +15,7 @@ export interface ServerOptions {
   configPath: string;
   dbPath: string;
   staticDir?: string;
-  skipAuth?: boolean;
   store?: Store;
-  sessionManager?: SessionManager;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -111,9 +108,6 @@ export function createServer(options: ServerOptions): Promise<http.Server> {
       res.end("Not found");
     }
   });
-
-  const sessionManager = options.sessionManager ?? new SessionManager(config.claude, config.formatter);
-  attachWebSocket(server, { config, store, sessionManager, skipAuth: options.skipAuth });
 
   return new Promise((resolve, reject) => {
     server.listen(port, bind, () => resolve(server));

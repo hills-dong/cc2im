@@ -5,7 +5,6 @@ function uuid(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  // Fallback for non-secure contexts (HTTP)
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
@@ -33,65 +32,92 @@ export interface Session {
 
 export const sessions = writable<Map<string, Session>>(new Map());
 
-let streamBuffer = "";
 // Map server threadKey → client sessKey for correlating responses
 const threadKeyMap = new Map<string, string>();
+// Map server messageId → { sessKey, localMsgId } for correlating updates
+const messageIdMap = new Map<string, { sessKey: string; localMsgId: string }>();
 
-on("chat.stream", (event) => {
-  if (event.contentType === "text") {
-    streamBuffer += event.content;
-    const sessKey = threadKeyMap.get(event.sessionId) ?? event.sessionId;
-    sessions.update(s => {
-      const session = s.get(sessKey);
-      if (session) {
-        const last = session.messages[session.messages.length - 1];
-        if (last?.streaming) {
-          // Create new objects so Svelte 5 $derived detects changes
-          const updated = { ...last, content: streamBuffer };
-          const newMessages = [...session.messages.slice(0, -1), updated];
-          const newSession = { ...session, messages: newMessages };
-          const newMap = new Map(s);
-          newMap.set(sessKey, newSession);
-          return newMap;
-        }
-      }
-      return s;
-    });
-  }
+// --- chat.message: new message from adapter.sendMessage ---
+on("chat.message", (event) => {
+  const threadId = event.threadId as string;
+  const messageId = event.messageId as string;
+  const content = event.content as string;
+  const sessKey = threadKeyMap.get(threadId);
+
+  if (!sessKey) return; // Not a thread we're tracking
+
+  sessions.update(s => {
+    const session = s.get(sessKey);
+    if (!session) return s;
+
+    const last = session.messages[session.messages.length - 1];
+    if (last?.streaming) {
+      // Update existing streaming assistant message with server's messageId
+      const updated = { ...last, content };
+      messageIdMap.set(messageId, { sessKey, localMsgId: last.id });
+      const newMessages = [...session.messages.slice(0, -1), updated];
+      const newMap = new Map(s);
+      newMap.set(sessKey, { ...session, messages: newMessages });
+      return newMap;
+    }
+
+    return s;
+  });
 });
 
+// --- chat.update: message edited by adapter.editMessage (full content replace) ---
+on("chat.update", (event) => {
+  const threadId = event.threadId as string;
+  const messageId = event.messageId as string;
+  const content = event.content as string;
+
+  // Try to find session by messageId mapping first, then by threadKey
+  const mapping = messageIdMap.get(messageId);
+  const sessKey = mapping?.sessKey ?? threadKeyMap.get(threadId);
+  if (!sessKey) return;
+
+  sessions.update(s => {
+    const session = s.get(sessKey);
+    if (!session) return s;
+
+    const last = session.messages[session.messages.length - 1];
+    if (last?.streaming) {
+      const updated = { ...last, content };
+      const newMessages = [...session.messages.slice(0, -1), updated];
+      const newMap = new Map(s);
+      newMap.set(sessKey, { ...session, messages: newMessages });
+      return newMap;
+    }
+
+    return s;
+  });
+});
+
+// --- chat.done: handleMessage completed, tokens available ---
 on("chat.done", (event) => {
-  const sessKey = threadKeyMap.get(event.sessionId) ?? event.sessionId;
-  streamBuffer = "";
+  const threadId = event.threadId as string;
+  const sessKey = threadKeyMap.get(threadId) ?? threadId;
+
   sessions.update(s => {
     const session = s.get(sessKey);
     if (session) {
       const last = session.messages[session.messages.length - 1];
       if (last) {
+        const tokens = event.tokens as any;
         const updated = {
           ...last,
-          content: event.result,
           streaming: false,
           tokens: {
-            input: event.tokens?.inputTokens ?? 0,
-            output: event.tokens?.outputTokens ?? 0,
-            cacheRead: event.tokens?.cacheReadTokens ?? 0,
-            cacheCreation: event.tokens?.cacheCreationTokens ?? 0,
+            input: tokens?.inputTokens ?? 0,
+            output: tokens?.outputTokens ?? 0,
+            cacheRead: tokens?.cacheReadTokens ?? 0,
+            cacheCreation: tokens?.cacheCreationTokens ?? 0,
           },
         };
         const newMessages = [...session.messages.slice(0, -1), updated];
-        const realId = event.realSessionId ?? session.id;
-        const newSession = {
-          ...session,
-          messages: newMessages,
-          id: realId,
-        };
+        const newSession = { ...session, messages: newMessages };
         const newMap = new Map(s);
         newMap.set(sessKey, newSession);
-        // Also store under the real session ID and threadKey so the session page can find it after navigation
-        if (realId && realId !== sessKey) {
-          newMap.set(realId, newSession);
-        }
         if (session.threadKey && session.threadKey !== sessKey) {
           newMap.set(session.threadKey, newSession);
         }
@@ -100,20 +126,23 @@ on("chat.done", (event) => {
     }
     return s;
   });
-  threadKeyMap.delete(event.sessionId);
+  threadKeyMap.delete(threadId);
 });
 
+// --- chat.error: handleMessage threw ---
 on("chat.error", (event) => {
-  const sessKey = threadKeyMap.get(event.sessionId) ?? event.sessionId;
-  streamBuffer = "";
+  const threadId = event.threadId as string;
+  const sessKey = threadKeyMap.get(threadId) ?? threadId;
+
   sessions.update(s => {
     const session = s.get(sessKey);
     if (session) {
       const last = session.messages[session.messages.length - 1];
       if (last?.streaming) {
+        const error = event.error as any;
         const updated = {
           ...last,
-          content: `Error: ${event.error?.message ?? "Unknown error"}`,
+          content: `Error: ${error?.message ?? "Unknown error"}`,
           streaming: false,
         };
         const newMessages = [...session.messages.slice(0, -1), updated];
@@ -125,7 +154,7 @@ on("chat.error", (event) => {
     }
     return s;
   });
-  threadKeyMap.delete(event.sessionId);
+  threadKeyMap.delete(threadId);
 });
 
 export async function loadSession(baseUrl: string, threadId: string, project: string): Promise<void> {
@@ -136,7 +165,7 @@ export async function loadSession(baseUrl: string, threadId: string, project: st
   try {
     const res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(threadId)}/messages`);
     if (!res.ok) return;
-    const rows: Array<{ message_id: string; is_bot: number; content_summary: string | null; input_tokens?: number; output_tokens?: number; created_at: string }> = await res.json();
+    const rows: Array<{ message_id: string; is_bot: number; content_summary: string | null; input_tokens?: number; output_tokens?: number; cache_read_tokens?: number; cache_creation_tokens?: number; created_at: string }> = await res.json();
     if (rows.length === 0) return;
 
     const messages: ChatMessage[] = rows.map(r => ({
@@ -169,9 +198,6 @@ export async function loadSession(baseUrl: string, threadId: string, project: st
       newMap.set(threadId, { id: threadId, project, messages, threadKey: threadId, baseInputTokens, baseOutputTokens, baseCacheReadTokens, baseCacheCreationTokens });
       return newMap;
     });
-
-    // Subscribe to this thread's events so we receive any in-progress or future messages
-    send({ type: "chat.subscribe", threadKey: threadId });
   } catch {
     // Silently fail
   }
@@ -205,7 +231,5 @@ export function sendMessage(project: string, message: string, sessionId?: string
     return newMap;
   });
 
-  streamBuffer = "";
-  send({ type: "chat.subscribe", threadKey });
   send({ type: "chat.send", project, sessionId, message, threadKey });
 }

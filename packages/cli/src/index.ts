@@ -85,14 +85,22 @@ function parseAskAnswer(answer: string, questions: AskQuestion[]): string {
   return results.join("\n");
 }
 
-const CONFIG_PATH = resolveConfigPath(process.env.CC2IM_CONFIG);
-const DB_PATH = resolve(process.env.CC2IM_DB ?? join(dirname(CONFIG_PATH), "cc2im.db"));
+let CONFIG_PATH = "";
 
-export async function main() {
+export interface MainOptions {
+  webPort?: number;
+  webBind?: string;
+  configPath?: string;
+}
+
+export async function main(options?: MainOptions) {
   console.log("cc2im starting...");
 
+  CONFIG_PATH = resolveConfigPath(options?.configPath ?? process.env.CC2IM_CONFIG);
+  const dbPath = resolve(process.env.CC2IM_DB ?? join(dirname(CONFIG_PATH), "cc2im.db"));
+
   let config = loadConfig(CONFIG_PATH);
-  const store = new Store(DB_PATH);
+  const store = new Store(dbPath);
   const sessionManager = new SessionManager(config.claude, config.formatter);
   const formatter = new Formatter(config.formatter);
   const router = new Router(config, store);
@@ -105,26 +113,57 @@ export async function main() {
     adapters.push(discord);
   }
 
+  // Initialize Web adapter if web port is configured
+  let webAdapter: import("./adapters/web.js").WebAdapter | null = null;
+  if (options?.webPort) {
+    const { WebAdapter } = await import("./adapters/web.js");
+    webAdapter = new WebAdapter({
+      port: options.webPort,
+      bind: options.webBind ?? "0.0.0.0",
+      configPath: CONFIG_PATH,
+      store,
+      config,
+    });
+    adapters.push(webAdapter);
+  }
+
   // Start all adapters
   for (const adapter of adapters) {
     await adapter.start();
 
-    // Setup project channels
+    // Setup project channels — web adapter registers all projects
     for (const project of config.projects) {
-      if (!project.platforms[adapter.platform]) continue;
+      if (adapter.platform !== "web" && !project.platforms[adapter.platform]) continue;
       const channelInfo = await adapter.setupProject(project);
       router.registerChannel(channelInfo.channelId, adapter.platform, project.name);
       console.log(`Registered ${adapter.platform} channel ${channelInfo.channelId} → ${project.name}`);
     }
 
     // Handle incoming messages
-    adapter.onMessage(async (msg) => {
-      try {
-        await handleMessage(msg, adapter, router, sessionManager, formatter, store, config);
-      } catch (err) {
-        console.error("Error handling message:", err);
-      }
-    });
+    if (adapter.platform === "web" && webAdapter) {
+      // Web adapter: wrap handleMessage with done/error signaling
+      const wa = webAdapter;
+      adapter.onMessage(async (msg) => {
+        const threadId = msg.threadId ?? msg.channelId;
+        try {
+          await handleMessage(msg, adapter, router, sessionManager, formatter, store, config);
+          // Send done with token stats after handleMessage completes
+          const tokens = store.getSessionTokens(threadId);
+          wa.sendDone(threadId, tokens);
+        } catch (err) {
+          console.error("Error handling web message:", err);
+          wa.sendError(threadId, err instanceof Error ? err.message : String(err));
+        }
+      });
+    } else {
+      adapter.onMessage(async (msg) => {
+        try {
+          await handleMessage(msg, adapter, router, sessionManager, formatter, store, config);
+        } catch (err) {
+          console.error("Error handling message:", err);
+        }
+      });
+    }
 
     // Handle reactions
     adapter.onReaction(async (reaction) => {
@@ -151,7 +190,7 @@ export async function main() {
   }
 
   if (adapters.length === 0) {
-    console.error("No platform adapters configured. Set at least one platform token in config.yaml.");
+    console.error("No platform adapters configured. Set at least one platform token or --port.");
     process.exit(1);
   }
 

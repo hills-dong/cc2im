@@ -49,21 +49,8 @@ switch (command) {
     const bind = bindIdx !== -1 ? process.argv[bindIdx + 1] : "0.0.0.0";
     const configIdx = process.argv.indexOf("--config");
     const configPath = configIdx !== -1 ? process.argv[configIdx + 1] : undefined;
-    const { resolve } = await import("path");
-    const { resolveConfigPath } = await import("./service.js");
-    const { createServer } = await import("@cc2im/server");
-
-    const resolvedConfig = resolveConfigPath(configPath);
-    const dbPath = resolve(process.env.CC2IM_DB ?? "cc2im.db");
-
-    await createServer({
-      port,
-      bind,
-      configPath: resolvedConfig,
-      dbPath,
-      skipAuth: true,
-    });
-    console.log(`cc2im web UI available at http://${bind}:${port}`);
+    const { main } = await import("./index.js");
+    await main({ webPort: port, webBind: bind, configPath });
     break;
   }
   case "run": {

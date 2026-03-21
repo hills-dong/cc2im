@@ -103,18 +103,18 @@ describe("chat store", () => {
     });
   });
 
-  // --- chat.stream handler tests ---
+  // --- chat.message handler tests ---
 
-  describe("chat.stream handler", () => {
-    it("updates streaming assistant message content", () => {
+  describe("chat.message handler", () => {
+    it("updates streaming assistant message with initial content", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
       const threadKey = "web:proj:5000";
 
-      registeredHandlers.get("chat.stream")!({
-        type: "chat.stream",
-        sessionId: threadKey,
-        contentType: "text",
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-1",
         content: "Hello",
       });
 
@@ -123,29 +123,12 @@ describe("chat store", () => {
       vi.restoreAllMocks();
     });
 
-    it("non-text contentType does not update message", () => {
-      vi.spyOn(Date, "now").mockReturnValue(5000);
-      sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
-
-      registeredHandlers.get("chat.stream")!({
-        type: "chat.stream",
-        sessionId: threadKey,
-        contentType: "tool_use",
-        content: "something",
-      });
-
-      const session = get(sessions).get("new-proj")!;
-      expect(session.messages[1].content).toBe("");
-      vi.restoreAllMocks();
-    });
-
     it("no matching session does not crash", () => {
       expect(() => {
-        registeredHandlers.get("chat.stream")!({
-          type: "chat.stream",
-          sessionId: "nonexistent",
-          contentType: "text",
+        registeredHandlers.get("chat.message")!({
+          type: "chat.message",
+          threadId: "nonexistent",
+          messageId: "msg-1",
           content: "hello",
         });
       }).not.toThrow();
@@ -156,80 +139,132 @@ describe("chat store", () => {
       sendMessage("proj", "hi");
       const threadKey = "web:proj:5000";
 
-      // First, finish the stream so streaming=false
-      registeredHandlers.get("chat.done")!({
-        type: "chat.done",
-        sessionId: threadKey,
-        result: "done",
-        tokens: { inputTokens: 10, outputTokens: 20 },
+      // First set content via chat.message
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "done content",
       });
 
-      // Now try to stream again with a direct sessionId (no threadKey mapping since done clears it)
-      registeredHandlers.get("chat.stream")!({
-        type: "chat.stream",
-        sessionId: "new-proj",
-        contentType: "text",
+      // Complete the stream
+      registeredHandlers.get("chat.done")!({
+        type: "chat.done",
+        threadId: threadKey,
+        tokens: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      });
+
+      // Now try chat.message again on the same sessKey directly (threadKey mapping cleared by done)
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-2",
         content: "late update",
       });
 
       const session = get(sessions).get("new-proj")!;
-      // Last message should still be "done", not "late update"
-      expect(session.messages[1].content).toBe("done");
+      // Should still be "done content", not "late update"
+      expect(session.messages[1].content).toBe("done content");
       vi.restoreAllMocks();
     });
+  });
 
-    it("multiple stream events accumulate text", () => {
+  // --- chat.update handler tests ---
+
+  describe("chat.update handler", () => {
+    it("replaces streaming message content", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
       const threadKey = "web:proj:5000";
 
-      const handler = registeredHandlers.get("chat.stream")!;
-      handler({ type: "chat.stream", sessionId: threadKey, contentType: "text", content: "Hello" });
-      handler({ type: "chat.stream", sessionId: threadKey, contentType: "text", content: " World" });
+      // First create the message mapping via chat.message
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "Initial",
+      });
+
+      // Then update via chat.update
+      registeredHandlers.get("chat.update")!({
+        type: "chat.update",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "Updated content",
+      });
 
       const session = get(sessions).get("new-proj")!;
-      expect(session.messages[1].content).toBe("Hello World");
+      expect(session.messages[1].content).toBe("Updated content");
       vi.restoreAllMocks();
+    });
+
+    it("multiple chat.update events replace (not accumulate)", () => {
+      vi.spyOn(Date, "now").mockReturnValue(5000);
+      sendMessage("proj", "hi");
+      const threadKey = "web:proj:5000";
+
+      // Create message mapping
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "First",
+      });
+
+      const handler = registeredHandlers.get("chat.update")!;
+      handler({ type: "chat.update", threadId: threadKey, messageId: "server-msg-1", content: "Hello" });
+      handler({ type: "chat.update", threadId: threadKey, messageId: "server-msg-1", content: "World" });
+
+      const session = get(sessions).get("new-proj")!;
+      // Should be "World" (replaced), not "HelloWorld" (accumulated)
+      expect(session.messages[1].content).toBe("World");
+      vi.restoreAllMocks();
+    });
+
+    it("no matching session does not crash", () => {
+      expect(() => {
+        registeredHandlers.get("chat.update")!({
+          type: "chat.update",
+          threadId: "nonexistent",
+          messageId: "msg-1",
+          content: "hello",
+        });
+      }).not.toThrow();
     });
   });
 
   // --- chat.done handler tests ---
 
   describe("chat.done handler", () => {
-    it("sets streaming=false and updates content to result", () => {
+    it("sets streaming=false and preserves content from prior chat.update", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
       const threadKey = "web:proj:5000";
 
+      // Content set by chat.message + chat.update before done
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "Initial",
+      });
+      registeredHandlers.get("chat.update")!({
+        type: "chat.update",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "Final answer",
+      });
+
       registeredHandlers.get("chat.done")!({
         type: "chat.done",
-        sessionId: threadKey,
-        result: "Final answer",
-        tokens: { inputTokens: 10, outputTokens: 20 },
+        threadId: threadKey,
+        tokens: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheCreationTokens: 0 },
       });
 
       const session = get(sessions).get("new-proj")!;
       const last = session.messages[1];
       expect(last.streaming).toBe(false);
       expect(last.content).toBe("Final answer");
-      vi.restoreAllMocks();
-    });
-
-    it("sets session id to realSessionId", () => {
-      vi.spyOn(Date, "now").mockReturnValue(5000);
-      sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
-
-      registeredHandlers.get("chat.done")!({
-        type: "chat.done",
-        sessionId: threadKey,
-        result: "done",
-        realSessionId: "real-sess-99",
-        tokens: { inputTokens: 1, outputTokens: 2 },
-      });
-
-      const session = get(sessions).get("new-proj")!;
-      expect(session.id).toBe("real-sess-99");
       vi.restoreAllMocks();
     });
 
@@ -240,9 +275,8 @@ describe("chat store", () => {
 
       registeredHandlers.get("chat.done")!({
         type: "chat.done",
-        sessionId: threadKey,
-        result: "ok",
-        tokens: { inputTokens: 100, outputTokens: 200 },
+        threadId: threadKey,
+        tokens: { inputTokens: 100, outputTokens: 200, cacheReadTokens: 0, cacheCreationTokens: 0 },
       });
 
       const session = get(sessions).get("new-proj")!;
@@ -250,49 +284,37 @@ describe("chat store", () => {
       vi.restoreAllMocks();
     });
 
-    it("realSessionId null keeps original session id", () => {
-      vi.spyOn(Date, "now").mockReturnValue(5000);
-      sendMessage("proj", "hi", "existing-sess");
-      const threadKey = "web:proj:5000";
-
-      registeredHandlers.get("chat.done")!({
-        type: "chat.done",
-        sessionId: threadKey,
-        result: "ok",
-        realSessionId: null,
-        tokens: { inputTokens: 1, outputTokens: 1 },
-      });
-
-      const session = get(sessions).get("existing-sess")!;
-      // null ?? session.id => session.id which is "existing-sess"
-      expect(session.id).toBe("existing-sess");
-      vi.restoreAllMocks();
-    });
-
-    it("cleans up threadKeyMap (subsequent events fall through to sessionId)", () => {
+    it("cleans up threadKeyMap (subsequent events fall through)", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
       const threadKey = "web:proj:5000";
 
-      registeredHandlers.get("chat.done")!({
-        type: "chat.done",
-        sessionId: threadKey,
-        result: "done",
-        tokens: { inputTokens: 1, outputTokens: 1 },
+      // Set content before done
+      registeredHandlers.get("chat.message")!({
+        type: "chat.message",
+        threadId: threadKey,
+        messageId: "server-msg-1",
+        content: "done content",
       });
 
-      // After done, threadKey should be cleared. A new stream event with the same threadKey
-      // would use threadKey as sessKey directly (no mapping), which won't match "new-proj"
-      registeredHandlers.get("chat.stream")!({
-        type: "chat.stream",
-        sessionId: threadKey,
-        contentType: "text",
+      registeredHandlers.get("chat.done")!({
+        type: "chat.done",
+        threadId: threadKey,
+        tokens: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      });
+
+      // After done, threadKey should be cleared. A new update event with the same threadKey
+      // would not find the mapping, so it won't update our session
+      registeredHandlers.get("chat.update")!({
+        type: "chat.update",
+        threadId: threadKey,
+        messageId: "server-msg-2",
         content: "stale",
       });
 
       // The session "new-proj" should not be updated since threadKey is no longer mapped
       const session = get(sessions).get("new-proj")!;
-      expect(session.messages[1].content).toBe("done");
+      expect(session.messages[1].content).toBe("done content");
       vi.restoreAllMocks();
     });
 
@@ -300,8 +322,8 @@ describe("chat store", () => {
       expect(() => {
         registeredHandlers.get("chat.done")!({
           type: "chat.done",
-          sessionId: "nonexistent",
-          result: "ok",
+          threadId: "nonexistent",
+          tokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
         });
       }).not.toThrow();
     });
@@ -317,7 +339,7 @@ describe("chat store", () => {
 
       registeredHandlers.get("chat.error")!({
         type: "chat.error",
-        sessionId: threadKey,
+        threadId: threadKey,
         error: { message: "Rate limited" },
       });
 
@@ -335,7 +357,7 @@ describe("chat store", () => {
 
       registeredHandlers.get("chat.error")!({
         type: "chat.error",
-        sessionId: threadKey,
+        threadId: threadKey,
         error: {},
       });
 
@@ -348,7 +370,7 @@ describe("chat store", () => {
       expect(() => {
         registeredHandlers.get("chat.error")!({
           type: "chat.error",
-          sessionId: "nonexistent",
+          threadId: "nonexistent",
           error: { message: "fail" },
         });
       }).not.toThrow();
@@ -362,21 +384,21 @@ describe("chat store", () => {
       // First complete the stream
       registeredHandlers.get("chat.done")!({
         type: "chat.done",
-        sessionId: threadKey,
-        result: "completed",
-        tokens: { inputTokens: 1, outputTokens: 1 },
+        threadId: threadKey,
+        tokens: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
       });
 
-      // Now try error on same session via direct sessKey
+      // Now try error on same session via direct sessKey (threadKey mapping cleared)
       registeredHandlers.get("chat.error")!({
         type: "chat.error",
-        sessionId: "new-proj",
+        threadId: "new-proj",
         error: { message: "late error" },
       });
 
       const session = get(sessions).get("new-proj")!;
-      // Should still be "completed", not the error
-      expect(session.messages[1].content).toBe("completed");
+      // Should still be empty (done didn't set content), not the error
+      expect(session.messages[1].content).toBe("");
+      expect(session.messages[1].streaming).toBe(false);
       vi.restoreAllMocks();
     });
   });
