@@ -46,59 +46,6 @@ describe("constructor", () => {
     s2.close();
   });
 
-  it("3: migration adds status column to old db", () => {
-    // Simulate an old db without status column by creating a db, dropping status, then reopening
-    const p = tmpDb();
-    cleanups.push(p);
-    const rawDb = new Database(p);
-    rawDb.exec(`
-      CREATE TABLE IF NOT EXISTS threads (
-        thread_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        channel_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (thread_id, platform)
-      );
-      CREATE TABLE IF NOT EXISTS messages (
-        message_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        thread_id TEXT NOT NULL,
-        is_bot BOOLEAN NOT NULL DEFAULT FALSE,
-        content_summary TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (message_id, platform)
-      );
-      CREATE TABLE IF NOT EXISTS pending_restarts (
-        thread_id TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (thread_id, platform)
-      );
-      CREATE TABLE IF NOT EXISTS token_usage (
-        id INTEGER PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        model TEXT,
-        input_tokens INTEGER DEFAULT 0,
-        output_tokens INTEGER DEFAULT 0,
-        cache_read_tokens INTEGER DEFAULT 0,
-        cache_creation_tokens INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    // Insert a row without status
-    rawDb.prepare("INSERT INTO threads (thread_id, platform, channel_id, session_id, project_name) VALUES (?,?,?,?,?)").run("t1", "discord", "ch", "s", "p");
-    rawDb.close();
-
-    // Now open with Store which should run migrate and add status column
-    const store = new Store(p);
-    const row = store.getThread("t1", "discord" as Platform);
-    expect(row).not.toBeNull();
-    expect(row!.status).toBe("active");
-    store.close();
-  });
 });
 
 // ── upsertThread ─────────────────────────────────────────────────────

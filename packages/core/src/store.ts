@@ -64,103 +64,48 @@ export class Store {
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
-    this.migrate();
+    this.init();
   }
 
-  private getSchemaVersion(): number {
-    try {
-      const row = this.db.prepare("SELECT version FROM schema_version LIMIT 1").get() as { version: number } | undefined;
-      return row?.version ?? 0;
-    } catch {
-      return 0;
-    }
-  }
+  private init(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS threads (
+        thread_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        project_name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        name TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (thread_id, platform)
+      );
 
-  private setSchemaVersion(version: number): void {
-    this.db.exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
-    this.db.exec("DELETE FROM schema_version");
-    this.db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
-  }
+      CREATE TABLE IF NOT EXISTS messages (
+        message_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        is_bot BOOLEAN NOT NULL DEFAULT FALSE,
+        content_summary TEXT,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        cache_read_tokens INTEGER DEFAULT 0,
+        cache_creation_tokens INTEGER DEFAULT 0,
+        model TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (message_id, platform)
+      );
 
-  private migrate(): void {
-    const addCol = (table: string, column: string, def: string) => {
-      try { this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`); } catch { /* already exists */ }
-    };
-    const version = this.getSchemaVersion();
+      CREATE TABLE IF NOT EXISTS pending_restarts (
+        thread_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (thread_id, platform)
+      );
 
-    // v0 → v1: initial schema
-    if (version < 1) {
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS threads (
-          thread_id TEXT NOT NULL,
-          platform TEXT NOT NULL,
-          channel_id TEXT NOT NULL,
-          session_id TEXT NOT NULL,
-          project_name TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'active',
-          name TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (thread_id, platform)
-        );
-
-        CREATE TABLE IF NOT EXISTS messages (
-          message_id TEXT NOT NULL,
-          platform TEXT NOT NULL,
-          thread_id TEXT NOT NULL,
-          is_bot BOOLEAN NOT NULL DEFAULT FALSE,
-          content_summary TEXT,
-          input_tokens INTEGER DEFAULT 0,
-          output_tokens INTEGER DEFAULT 0,
-          cache_read_tokens INTEGER DEFAULT 0,
-          cache_creation_tokens INTEGER DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (message_id, platform)
-        );
-
-        CREATE TABLE IF NOT EXISTS pending_restarts (
-          thread_id TEXT NOT NULL,
-          platform TEXT NOT NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (thread_id, platform)
-        );
-      `);
-
-      // Compat: add columns that may be missing in pre-versioned databases
-      addCol("threads", "status", "TEXT NOT NULL DEFAULT 'active'");
-      addCol("threads", "name", "TEXT");
-      addCol("messages", "input_tokens", "INTEGER DEFAULT 0");
-      addCol("messages", "output_tokens", "INTEGER DEFAULT 0");
-      addCol("messages", "cache_read_tokens", "INTEGER DEFAULT 0");
-      addCol("messages", "cache_creation_tokens", "INTEGER DEFAULT 0");
-      addCol("messages", "model", "TEXT");
-    }
-
-    // v1 → v2: add indexes for query performance
-    if (version < 2) {
-      this.db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, platform);
-        CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_name, status);
-      `);
-    }
-
-    // v2 → v3: drop token_usage table, add model to messages, migrate data
-    if (version < 3) {
-      addCol("messages", "model", "TEXT");
-      // Migrate token_usage data into messages if the table exists
-      try {
-        const hasTokenUsage = this.db.prepare(
-          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='token_usage'"
-        ).get();
-        if (hasTokenUsage) {
-          this.db.exec("DROP TABLE IF EXISTS token_usage");
-        }
-      } catch { /* table doesn't exist, nothing to migrate */ }
-      // Drop obsolete indexes
-      this.db.exec("DROP INDEX IF EXISTS idx_token_usage_session");
-      this.db.exec("DROP INDEX IF EXISTS idx_token_usage_project");
-    }
-
-    this.setSchemaVersion(3);
+      CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, platform);
+      CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_name, status);
+    `);
   }
 
   upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string, name?: string): void {
