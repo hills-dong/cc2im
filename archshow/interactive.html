@@ -3,29 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>cc2im — Interactive Architecture Diagram</title>
+<title>cc2im — Architecture Diagram</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg: #09090b;
   --bg-card: #18181b;
-  --bg-code: #1e1e22;
+  --bg-card-hover: #1f1f23;
   --border: #27272a;
   --border-hover: #3f3f46;
   --text: #fafafa;
   --text-muted: #a1a1aa;
   --text-dim: #71717a;
   --cyan: #4cc9f0;
-  --cyan-dim: #4cc9f020;
   --green: #34d399;
   --yellow: #fbbf24;
-  --red: #f87171;
-  --purple: #a78bfa;
   --orange: #fb923c;
-  --pink: #f472b6;
+  --purple: #a78bfa;
   --blue: #5865F2;
   --lark-blue: #2D60F5;
+  --store: #71717a;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
@@ -37,1741 +35,1397 @@ body {
   overflow: hidden;
   width: 100vw; height: 100vh;
   -webkit-font-smoothing: antialiased;
-  user-select: none;
 }
 
-/* ── Controls bar ── */
+/* ── Controls Bar ── */
 #controls {
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-  background: rgba(9,9,11,0.92); backdrop-filter: blur(12px);
+  background: rgba(9,9,11,0.94); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 16px; height: 44px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px; height: 46px;
 }
-#controls h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.5px; white-space: nowrap; }
+#controls h1 { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; white-space: nowrap; }
 #controls h1 span { color: var(--cyan); }
-.ctrl-sep { width: 1px; height: 20px; background: var(--border); }
+.ctrl-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
 .ctrl-btn {
-  font-size: 12px; padding: 4px 10px; border-radius: 5px;
+  font-size: 12px; padding: 5px 12px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg-card);
   color: var(--text-muted); cursor: pointer; font-family: var(--font-mono);
-  transition: all 0.15s; white-space: nowrap;
+  transition: all 0.15s; white-space: nowrap; line-height: 1;
 }
 .ctrl-btn:hover { border-color: var(--border-hover); color: var(--text); }
-.ctrl-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(251,191,36,0.08); }
-#zoom-label { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); min-width: 48px; text-align: center; }
-.ctrl-shortcuts { margin-left: auto; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
-.ctrl-shortcuts kbd {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 3px;
-  padding: 1px 4px; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+.ctrl-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(76,201,240,0.08); }
+#chain-name {
+  font-size: 13px; color: var(--yellow); font-weight: 600;
+  font-family: var(--font-mono); display: none; white-space: nowrap;
 }
-
-/* ── Viewport ── */
-#viewport {
-  position: fixed; top: 44px; left: 0; right: 0; bottom: 0;
-  overflow: hidden; cursor: grab;
-}
-#viewport.dragging { cursor: grabbing; }
-
-#canvas {
-  position: absolute; transform-origin: 0 0;
-  width: 5200px; height: 4600px;
-}
-
-/* ── SVG connections overlay ── */
-#connections {
-  position: absolute; top: 0; left: 0;
-  width: 5200px; height: 4600px;
-  pointer-events: none; z-index: 1;
-}
-
-/* ── Nodes ── */
-.node {
-  position: absolute; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: 10px;
-  overflow: visible; z-index: 2;
-  transition: box-shadow 0.2s, opacity 0.3s, filter 0.3s, border-color 0.3s;
-}
-.node:hover { box-shadow: 0 0 24px rgba(76,201,240,0.06); }
-.node-head {
-  padding: 10px 14px 8px; display: flex; align-items: center; gap: 8px;
-  border-bottom: 1px solid var(--border);
-}
-.node-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.node-title { font-size: 14px; font-weight: 700; }
-.node-badge {
-  font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 4px;
-  background: var(--cyan-dim); color: var(--cyan); font-family: var(--font-mono);
-  margin-left: auto;
-}
-.node-body { padding: 10px 14px 14px; }
-.left-accent { border-left: 3px solid; }
-
-/* ── Content styles ── */
-.section-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.8px; color: var(--text-dim); margin: 8px 0 4px;
-}
-.section-label:first-child { margin-top: 0; }
-
-pre.code-block {
-  background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px;
-  padding: 8px 10px; overflow-x: auto; font-family: var(--font-mono);
-  font-size: 10.5px; line-height: 1.65; color: var(--text-muted); margin: 4px 0;
-  user-select: text;
-}
-.kw { color: var(--purple); } .tp { color: var(--cyan); }
-.str { color: var(--green); } .cm { color: var(--text-dim); }
-.fn { color: var(--yellow); } .num { color: var(--orange); }
-.prop { color: var(--pink); }
-
-.info-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 4px 0; }
-.info-table th {
-  text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border);
-  color: var(--text-dim); font-weight: 500; font-size: 9px;
-  text-transform: uppercase; letter-spacing: 0.5px;
-}
-.info-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
-.info-table tr:last-child td { border-bottom: none; }
-.info-table code {
-  background: var(--bg-code); padding: 1px 4px; border-radius: 3px;
-  font-size: 10px; color: var(--cyan); font-family: var(--font-mono);
-}
-
-.tag {
-  display: inline-block; font-size: 9px; padding: 1px 5px;
-  border-radius: 3px; font-weight: 500; font-family: var(--font-mono);
-}
-.tag-cyan { background: var(--cyan-dim); color: var(--cyan); }
-.tag-green { background: #34d39920; color: var(--green); }
-.tag-yellow { background: #fbbf2420; color: var(--yellow); }
-.tag-purple { background: #a78bfa20; color: var(--purple); }
-.tag-orange { background: #fb923c20; color: var(--orange); }
-.tag-pink { background: #f472b620; color: var(--pink); }
-.tag-red { background: #f8717120; color: var(--red); }
-
-.flow-step { display: flex; gap: 6px; padding: 3px 0; align-items: flex-start; }
-.flow-num {
-  width: 18px; height: 18px; border-radius: 4px;
-  background: var(--cyan-dim); color: var(--cyan);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 700; flex-shrink: 0;
-}
-.flow-text { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
-.flow-text strong { color: var(--text); }
-.desc-text { font-size: 11px; color: var(--text-dim); margin: 3px 0; line-height: 1.5; }
-.separator { height: 1px; background: var(--border); margin: 6px 0; }
-
-.state-row { display: flex; gap: 5px; flex-wrap: wrap; margin: 4px 0; align-items: center; }
-.state-pill {
-  font-size: 10px; padding: 2px 7px; border-radius: 4px;
-  border: 1px solid var(--border); color: var(--text-muted); font-family: var(--font-mono);
-}
-.state-pill.s-active { border-color: var(--cyan); color: var(--cyan); }
-.state-pill.s-green { border-color: var(--green); color: var(--green); }
-.state-pill.s-red { border-color: var(--red); color: var(--red); }
-.state-pill.s-yellow { border-color: var(--yellow); color: var(--yellow); }
-.arrow-label { font-size: 9px; color: var(--text-dim); }
-
-/* ── fn-anchor styles ── */
-.fn-anchor {
-  cursor: pointer;
-  padding: 1px 3px;
-  border-radius: 3px;
-  transition: all 0.2s;
-  position: relative;
-}
-.fn-anchor:hover {
-  background: rgba(251, 191, 36, 0.15);
-}
-.fn-anchor.highlighted {
-  background: rgba(251, 191, 36, 0.2);
-  box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
-  color: #fbbf24;
-}
-.fn-anchor.chain-active {
-  animation: fnPulse 1.5s ease-in-out infinite;
-}
-@keyframes fnPulse {
-  0%, 100% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.2); }
-  50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5); }
-}
-
-/* ── Chain dimming ── */
-.node.dimmed { opacity: 0.15; filter: grayscale(0.8); }
-.node.chain-node { opacity: 1; filter: none; border-color: rgba(251, 191, 36, 0.4); }
-
-/* ── Entry point panel ── */
-#entry-panel {
-  position: fixed; top: 56px; right: 16px; z-index: 1001;
-  background: rgba(24,24,27,0.95); border: 1px solid var(--border);
-  border-radius: 10px; width: 380px;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  font-family: var(--font-mono);
-  overflow: hidden;
-}
-#entry-panel-header {
-  padding: 10px 14px 8px;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  cursor: move;
-}
-#entry-panel-header .title {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 1px; color: var(--yellow);
-}
-#entry-panel-header .toggle-btn {
-  background: none; border: 1px solid var(--border); border-radius: 4px;
-  color: var(--text-dim); cursor: pointer; font-size: 11px;
-  padding: 2px 6px; font-family: var(--font-mono);
-  transition: all 0.15s;
-}
-#entry-panel-header .toggle-btn:hover { color: var(--text); border-color: var(--border-hover); }
-#entry-panel-body { padding: 6px 0; }
-#entry-panel-body.collapsed { display: none; }
-.entry-item {
-  padding: 6px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-  transition: all 0.15s; font-size: 10.5px; color: var(--text-muted);
-}
-.entry-item:hover { background: rgba(251,191,36,0.06); color: var(--text); }
-.entry-item.active { background: rgba(251,191,36,0.1); color: var(--yellow); }
-.entry-dot {
-  width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--yellow);
-  flex-shrink: 0; transition: all 0.15s;
-}
-.entry-item.active .entry-dot { background: var(--yellow); }
-.entry-name { font-weight: 600; color: var(--text); min-width: 120px; }
-.entry-item.active .entry-name { color: var(--yellow); }
-.entry-path { color: var(--text-dim); font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ── Speed control ── */
-#speed-control {
-  padding: 6px 14px 8px; border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 8px;
-  font-size: 10px; color: var(--text-dim);
-}
-#speed-control label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.speed-label { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
 .speed-btn {
-  background: none; border: 1px solid var(--border); border-radius: 4px;
-  color: var(--text-muted); cursor: pointer; font-size: 10px;
-  padding: 2px 8px; font-family: var(--font-mono);
+  font-size: 11px; padding: 3px 8px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-dim); cursor: pointer; font-family: var(--font-mono);
   transition: all 0.15s;
 }
-.speed-btn:hover { color: var(--text); border-color: var(--border-hover); }
+.speed-btn:hover { color: var(--text-muted); }
 .speed-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(251,191,36,0.08); }
+#speed-group { display: flex; align-items: center; gap: 4px; }
+#legend-btn { margin-left: auto; }
 
-/* ── Mini-map ── */
-#minimap {
-  position: fixed; bottom: 16px; right: 16px; z-index: 1000;
-  width: 200px; height: 180px;
-  background: rgba(24,24,27,0.92); border: 1px solid var(--border);
-  border-radius: 8px; overflow: hidden;
+/* ── Legend overlay ── */
+#legend-overlay {
+  position: fixed; top: 46px; right: 0; bottom: 0;
+  width: 260px; background: rgba(9,9,11,0.96); backdrop-filter: blur(12px);
+  border-left: 1px solid var(--border);
+  z-index: 900; padding: 20px 16px;
+  transform: translateX(100%); transition: transform 0.3s ease;
+  overflow-y: auto;
 }
-#minimap-canvas {
-  width: 100%; height: 100%;
+#legend-overlay.open { transform: translateX(0); }
+#legend-overlay h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-dim); margin-bottom: 12px; margin-top: 16px;
 }
-#minimap-viewport {
-  position: absolute; border: 1.5px solid var(--cyan);
-  background: rgba(76,201,240,0.08); pointer-events: none;
+#legend-overlay h3:first-child { margin-top: 0; }
+.legend-item { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-line { width: 28px; height: 2px; flex-shrink: 0; border-radius: 1px; }
+.legend-label { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+.legend-entry-sample {
+  display: inline-block; width: 40px; height: 16px; border-radius: 4px;
+  border-left: 3px solid var(--yellow); background: var(--bg-card);
+  border-top: 1px solid var(--border); border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 
-/* ── Legend ── */
-#legend {
-  position: fixed; bottom: 16px; left: 16px; z-index: 1000;
-  background: rgba(24,24,27,0.92); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 14px; font-size: 10px;
+/* ── Main area ── */
+#main {
+  position: fixed; top: 46px; left: 0; right: 0; bottom: 0;
+  overflow: auto;
 }
-#legend .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; color: var(--text-muted); }
-#legend .line-sample { width: 24px; height: 0; border-top: 2px; display: inline-block; }
+#swim-container {
+  position: relative;
+  min-width: max-content;
+  padding: 0 24px 40px 24px;
+}
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* ── Lane headers ── */
+#swim-header {
+  display: flex;
+  gap: 20px;
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(9,9,11,0.92); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0 10px 0;
+}
+.lane-header {
+  min-width: 180px;
+  text-align: center;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  border-top: 2px solid var(--lane-color);
+  font-family: var(--font-mono);
+}
+
+/* ── Swim lanes body ── */
+#swim-lanes {
+  display: flex;
+  gap: 20px;
+  position: relative;
+  padding-top: 16px;
+  min-height: calc(100vh - 120px);
+}
+.lane {
+  min-width: 180px;
+  background: rgba(24,24,27,0.3);
+  border: 1px solid rgba(39,39,42,0.5);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+  transition: opacity 0.4s;
+}
+/* Clients lane: allow inner horizontal pairing */
+.lane .module-pair {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.lane .module-pair > .module-group { flex: 1; }
+.lane.dimmed { opacity: 0.25; }
+
+/* ── Module group within a lane ── */
+.module-group {
+  flex: 1;
+  min-width: 0;
+}
+.module-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+}
+.module-label-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Function pills ── */
+.fn-pill {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: all 0.3s;
+  position: relative;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+/* Extra gap for pills that have same-module connections */
+.fn-pill.has-vertical-conn {
+  margin-bottom: 14px;
+}
+.fn-pill[data-entry="true"] {
+  cursor: pointer;
+  border-left: 3px solid var(--yellow);
+}
+.fn-pill[data-entry="true"]:hover {
+  border-color: var(--yellow);
+  color: var(--text);
+  background: rgba(251,191,36,0.05);
+}
+.fn-pill.highlighted {
+  border-color: var(--yellow) !important;
+  color: var(--text);
+  background: rgba(251,191,36,0.08);
+  box-shadow: 0 0 12px rgba(251,191,36,0.12);
+  z-index: 10;
+}
+.fn-pill.dimmed {
+  opacity: 0.15;
+}
+.entry-dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--yellow);
+  margin-right: 3px;
+  vertical-align: middle;
+}
+/* Info button on pill */
+.fn-info-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+  font-family: var(--font-sans);
+}
+.fn-pill:hover .fn-info-btn { opacity: 1; }
+.fn-info-btn:hover { border-color: var(--cyan); color: var(--cyan); background: var(--bg-card); }
+
+/* Popover */
+.fn-popover {
+  position: absolute;
+  z-index: 200;
+  width: 280px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  pointer-events: auto;
+}
+.fn-popover-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.fn-popover-header .pop-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.fn-popover-header .pop-module {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.fn-popover-header .pop-close {
+  margin-left: auto;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+}
+.fn-popover-header .pop-close:hover { color: var(--text); }
+.fn-popover .pop-fn {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cyan);
+  margin-bottom: 6px;
+}
+.fn-popover .pop-desc {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.fn-popover .pop-file {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ── SVG overlay ── */
+#svg-overlay {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+#svg-overlay .conn-hit { pointer-events: stroke; }
+.conn-path {
+  fill: none;
+  stroke-width: 0.8;
+  opacity: 0.12;
+  transition: opacity 0.4s, stroke-width 0.4s;
+}
+.conn-path.request { stroke: #fbbf24; }
+.conn-path.response { stroke: #4cc9f0; }
+.conn-path.active { opacity: 0.6; stroke-width: 1.5; }
+.conn-path.dimmed { opacity: 0.02; }
+/* Function call type badges */
+.fn-badge {
+  display: inline-block;
+  font-size: 7px;
+  padding: 0 3px;
+  border-radius: 2px;
+  margin-left: 3px;
+  vertical-align: middle;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.fn-badge.badge-timer { background: #fbbf2430; color: #fbbf24; }
+.fn-badge.badge-catch { background: #f8717130; color: #f87171; }
+.fn-badge.badge-cb { background: #a78bfa30; color: #a78bfa; }
+.fn-badge.badge-orch { background: #34d39930; color: #34d399; }
+/* Invisible wider hit area for dragging paths */
+.conn-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: grab;
+}
+.conn-hit:hover + .conn-path { opacity: 0.5; stroke-width: 2.5; }
+.conn-hit.dragging { cursor: grabbing; }
+
+/* ── Entry points bar ── */
+#entry-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 800;
+  background: rgba(9,9,11,0.94); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+#entry-bar .bar-label {
+  font-size: 11px; color: var(--text-dim); font-family: var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;
+  white-space: nowrap;
+}
+.entry-chip {
+  font-size: 11px; padding: 4px 10px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-muted); cursor: pointer; font-family: var(--font-mono);
+  transition: all 0.2s; white-space: nowrap;
+}
+.entry-chip:hover {
+  border-color: var(--yellow); color: var(--yellow);
+  background: rgba(251,191,36,0.06);
+}
+.entry-chip.active {
+  border-color: var(--yellow); color: var(--yellow);
+  background: rgba(251,191,36,0.1);
+  box-shadow: 0 0 8px rgba(251,191,36,0.15);
+}
+
+/* ── Pulse on step ── */
+@keyframes pill-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(251,191,36,0.4); }
+  100% { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
+}
+.fn-pill.pulse {
+  animation: pill-pulse 0.5s ease-out;
+}
 </style>
 </head>
 <body>
 
-<!-- ── Controls ── -->
+<!-- Controls -->
 <div id="controls">
   <h1><span>cc2im</span> Architecture</h1>
   <div class="ctrl-sep"></div>
-  <button class="ctrl-btn" onclick="zoomBy(0.15)">+</button>
-  <span id="zoom-label">100%</span>
-  <button class="ctrl-btn" onclick="zoomBy(-0.15)">-</button>
-  <button class="ctrl-btn" onclick="resetView()">Reset</button>
-  <button class="ctrl-btn" onclick="fitToScreen()">Fit</button>
+  <span id="chain-name"></span>
+  <button class="ctrl-btn" onclick="resetChain()">Reset</button>
   <div class="ctrl-sep"></div>
-  <span class="ctrl-shortcuts">
-    <kbd>Scroll</kbd> zoom &nbsp; <kbd>Drag</kbd> pan &nbsp; <kbd>+/-</kbd> zoom &nbsp; <kbd>0</kbd> reset &nbsp; <kbd>Arrows</kbd> pan &nbsp; <kbd>Esc</kbd> clear chain
-  </span>
+  <div id="speed-group">
+    <span class="speed-label">Speed</span>
+    <button class="speed-btn" onclick="setSpeed(0.5)">0.5x</button>
+    <button class="speed-btn active" onclick="setSpeed(1)">1x</button>
+    <button class="speed-btn" onclick="setSpeed(2)">2x</button>
+  </div>
+  <button class="ctrl-btn" id="legend-btn" onclick="toggleLegend()">Legend</button>
 </div>
 
-<!-- ── Viewport ── -->
-<div id="viewport">
-  <div id="canvas">
-    <svg id="connections" xmlns="http://www.w3.org/2000/svg"></svg>
+<!-- Legend -->
+<div id="legend-overlay">
+  <h3>Modules</h3>
+  <div class="legend-item"><div class="legend-dot" style="background:#5865F2"></div><span class="legend-label">Discord</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2D60F5"></div><span class="legend-label">Lark</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4cc9f0"></div><span class="legend-label">Web / Core</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div><span class="legend-label">Claude</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#71717a"></div><span class="legend-label">Store / Config</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div><span class="legend-label">API</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div><span class="legend-label">CLI</span></div>
+  <h3>Flow</h3>
+  <div class="legend-item"><div class="legend-line" style="background:#fbbf24"></div><span class="legend-label">Request (forward)</span></div>
+  <div class="legend-item"><div class="legend-line" style="background:#4cc9f0"></div><span class="legend-label">Response (return)</span></div>
+  <h3>Entry Points</h3>
+  <div class="legend-item"><div class="legend-entry-sample"></div><span class="legend-label">Clickable entry</span></div>
+</div>
+
+<!-- Main swim area -->
+<div id="main">
+  <div id="swim-container">
+    <div id="swim-header"></div>
+    <div id="swim-lanes"></div>
+    <svg id="svg-overlay">
+      <defs>
+        <marker id="arrow-req" markerWidth="4" markerHeight="3.5" refX="3.5" refY="1.75" orient="auto">
+          <polygon points="0 0, 4 1.75, 0 3.5" fill="#fbbf24" opacity="0.7"/>
+        </marker>
+        <marker id="arrow-res" markerWidth="4" markerHeight="3.5" refX="3.5" refY="1.75" orient="auto">
+          <polygon points="0 0, 4 1.75, 0 3.5" fill="#4cc9f0" opacity="0.7"/>
+        </marker>
+        <filter id="glow-yellow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-blue" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+    </svg>
   </div>
 </div>
 
-<!-- ── Entry Point Panel ── -->
-<div id="entry-panel">
-  <div id="entry-panel-header">
-    <span class="title">Entry Points (click to trace)</span>
-    <button class="toggle-btn" onclick="toggleEntryPanel()">_</button>
-  </div>
-  <div id="entry-panel-body"></div>
-  <div id="speed-control">
-    <label>Speed:</label>
-    <button class="speed-btn" data-speed="0.5" onclick="setSpeed(0.5, this)">0.5x</button>
-    <button class="speed-btn active" data-speed="1" onclick="setSpeed(1, this)">1x</button>
-    <button class="speed-btn" data-speed="2" onclick="setSpeed(2, this)">2x</button>
-  </div>
-</div>
-
-<!-- ── Mini-map ── -->
-<div id="minimap">
-  <canvas id="minimap-canvas"></canvas>
-  <div id="minimap-viewport"></div>
-</div>
-
-<!-- ── Legend ── -->
-<div id="legend">
-  <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Connection Lines</div>
-  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#4cc9f0" stroke-width="1.5"/></svg> Message flow (cyan)</div>
-  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#3f3f46" stroke-width="1.2" stroke-dasharray="4,3"/></svg> Store ops (dim)</div>
-  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#a78bfa" stroke-width="1.5"/></svg> API flow (purple)</div>
-  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="6,3"/></svg> Async / return (orange)</div>
-  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#34d399" stroke-width="1.2"/></svg> WebSocket protocol (green)</div>
-  <div class="row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#fbbf24" stroke-width="2.5"/></svg> Active chain (yellow)</div>
+<!-- Entry bar -->
+<div id="entry-bar">
+  <span class="bar-label">Entry Points</span>
 </div>
 
 <script>
-// ============================================================
-// NODE DEFINITIONS — positions and content
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════════
 
-// Helper: wrap a code element text with fn-anchor
-function fa(nodeId, funcName, displayText) {
-  return `<span class="fn-anchor" data-fn="${nodeId}:${funcName}">${displayText}</span>`;
-}
+const MODULES = [
+  { id: 'discord', name: 'Discord', color: '#5865F2' },
+  { id: 'lark', name: 'Lark', color: '#2D60F5' },
+  { id: 'webui', name: 'Web UI', color: '#4cc9f0' },
+  { id: 'webadapter', name: 'WebAdapter', color: '#4cc9f0' },
+  { id: 'router', name: 'Router', color: '#4cc9f0' },
+  { id: 'session', name: 'SessionMgr', color: '#4cc9f0' },
+  { id: 'claude', name: 'Claude', color: '#fb923c' },
+  { id: 'formatter', name: 'Formatter', color: '#4cc9f0' },
+  { id: 'store', name: 'Store', color: '#71717a' },
+  { id: 'config', name: 'Config', color: '#71717a' },
+  { id: 'api', name: 'API', color: '#a78bfa' },
+  { id: 'cli', name: 'CLI', color: '#34d399' },
+];
 
-const NODES = [
-  // ── Column 1: Clients (x: 60) ──
+const LANES = [
   {
-    id: 'discord', x: 60, y: 60, w: 420, color: '#5865F2',
-    title: 'Discord Client', badge: 'discord.js v14', dot: '#5865F2',
-    html: `
-      <div class="section-label">DiscordAdapter</div>
-      <table class="info-table">
-        <tr><td>SDK</td><td><code>discord.js</code> v14</td></tr>
-        <tr><td>Connection</td><td>Bot Gateway (WebSocket)</td></tr>
-        <tr><td>Channels</td><td>Creates <code>cc2im-{project}</code> text channel per project</td></tr>
-        <tr><td>Threads</td><td>Discord thread from first message</td></tr>
-        <tr><td>Max length</td><td>2,000 chars</td></tr>
-        <tr><td>Extras</td><td>Slash commands, reactions, file upload</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Key Methods</div>
-      <table class="info-table">
-        <tr><th>Method</th><th>Purpose</th></tr>
-        <tr><td><code>${fa('discord','onMessage','onMessage(handler)')}</code></td><td>Register incoming message callback</td></tr>
-        <tr><td><code>${fa('discord','setupProject','setupProject(name)')}</code></td><td>Create/find channel, register route</td></tr>
-        <tr><td><code>${fa('discord','createThread','createThread(channelId, name)')}</code></td><td>Start Discord thread</td></tr>
-        <tr><td><code>${fa('discord','sendMessage','sendMessage()')}</code></td><td>Post to channel/thread</td></tr>
-        <tr><td><code>${fa('discord','editMessage','editMessage()')}</code></td><td>Update streaming content</td></tr>
-        <tr><td><code>${fa('discord','uploadFile','uploadFile()')}</code></td><td>Attach images/files</td></tr>
-        <tr><td><code>${fa('discord','addReaction','addReaction()')}</code></td><td>Add emoji reactions</td></tr>
-      </table>`
+    id: 'clients',
+    name: 'Clients',
+    color: '#5865F2',
+    layout: ['discord', 'lark', ['webui', 'webadapter'], 'cli'],
+    modules: ['discord', 'lark', 'webui', 'webadapter', 'cli'],
+    flex: 4,
   },
   {
-    id: 'lark', x: 60, y: 520, w: 420, color: '#2D60F5',
-    title: 'Lark Client', badge: 'node-sdk', dot: '#2D60F5',
-    html: `
-      <div class="section-label">LarkAdapter</div>
-      <table class="info-table">
-        <tr><td>SDK</td><td><code>@larksuiteoapi/node-sdk</code></td></tr>
-        <tr><td>Connection</td><td>Lark WebSocket client</td></tr>
-        <tr><td>Channels</td><td>Creates group chats per project</td></tr>
-        <tr><td>Threads</td><td>Lark message threads (reply chains)</td></tr>
-        <tr><td>Max length</td><td>30,000 chars</td></tr>
-        <tr><td>Extras</td><td>Owner init (<code>/im-init</code>), member management</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Key Methods</div>
-      <table class="info-table">
-        <tr><th>Method</th><th>Purpose</th></tr>
-        <tr><td><code>${fa('lark','onMessage','onMessage(handler)')}</code></td><td>Register incoming message callback</td></tr>
-        <tr><td><code>${fa('lark','setupProject','setupProject(name)')}</code></td><td>Create/find group chat</td></tr>
-        <tr><td><code>${fa('lark','sendMessage','sendMessage()')}</code></td><td>Post via Lark API</td></tr>
-        <tr><td><code>${fa('lark','editMessage','editMessage()')}</code></td><td>Update message content</td></tr>
-        <tr><td><code>${fa('lark','uploadFile','uploadFile()')}</code></td><td>Upload via Lark file API</td></tr>
-      </table>`
+    id: 'routing',
+    name: 'Routing & API',
+    color: '#4cc9f0',
+    modules: ['router', 'api'],
+    flex: 2,
   },
   {
-    id: 'webui', x: 60, y: 960, w: 420, color: '#4cc9f0',
-    title: 'Web UI', badge: 'SvelteKit 5 + shadcn', dot: '#4cc9f0',
-    html: `
-      <div class="section-label">Routes</div>
-      <table class="info-table">
-        <tr><td><code>/</code></td><td>Redirect to /chat</td></tr>
-        <tr><td><code>/chat</code></td><td>Project list</td></tr>
-        <tr><td><code>/chat/[project]</code></td><td>Session list</td></tr>
-        <tr><td><code>/chat/[project]/[session]</code></td><td>Chat conversation</td></tr>
-        <tr><td><code>/stats</code></td><td>Token usage dashboard</td></tr>
-        <tr><td><code>/config</code></td><td>Configuration editor</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Stores</div>
-      <table class="info-table">
-        <tr><td><code>connection.ts</code></td><td>WS lifecycle, auto-reconnect (0/1/2/4s then 30s cap), message queue, event dispatch</td></tr>
-        <tr><td><code>chat.ts</code></td><td>Session state (Map&lt;sessKey, Session&gt;), message arrays, thread key mapping</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Key Actions</div>
-      <table class="info-table">
-        <tr><td><code>${fa('webui','chat.send','chat.send')}</code></td><td>Send message via WS</td></tr>
-        <tr><td><code>${fa('webui','chat.subscribe','chat.subscribe')}</code></td><td>Subscribe to thread updates</td></tr>
-        <tr><td><code>${fa('webui','chat.abort','chat.abort')}</code></td><td>Abort current stream</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Session Lifecycle (state machine)</div>
-      <div class="state-row">
-        <span class="state-pill s-active">NewSession</span>
-        <span class="arrow-label">chat.message</span>
-        <span class="state-pill">Streaming</span>
-        <span class="arrow-label">chat.update</span>
-        <span class="state-pill">Streaming</span>
-        <span class="arrow-label">chat.done</span>
-        <span class="state-pill s-green">Complete</span>
-      </div>
-      <div class="desc-text">sessKey = "new-{project}" (temp). On first chat.message, rekeyed to threadKey. threadKeyMap maps threadKey to sessKey.</div>
-      <div class="separator"></div>
-      <div class="section-label">Reconnect Logic</div>
-      <div class="desc-text">Exponential backoff [0, 1s, 2s, 4s] then 30s cap. On open: reset counter, send sync.state, flush queued messages.</div>`
-  },
-
-  // ── Column 2: Core Middleware (x: 560) ──
-  {
-    id: 'router', x: 560, y: 60, w: 440, color: '#4cc9f0',
-    title: 'Router', badge: 'core/router.ts', dot: '#4cc9f0',
-    html: `
-      <div class="section-label">Channel Mapping</div>
-      <div class="desc-text">Maps <code>{platform}:{channelId}</code> to project. Registered at startup via <code>setupProject()</code>.</div>
-      <table class="info-table">
-        <tr><th>Platform</th><th>channelId Format</th><th>Router Key</th></tr>
-        <tr><td><span class="tag tag-purple">Discord</span></td><td>Discord channel ID</td><td><code>discord:1234567890</code></td></tr>
-        <tr><td><span class="tag tag-cyan">Lark</span></td><td>Lark chat ID</td><td><code>lark:oc_xxxxx</code></td></tr>
-        <tr><td><span class="tag tag-green">Web</span></td><td><code>wb_{projectName}</code></td><td><code>web:wb_myproject</code></td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Management Commands</div>
-      <table class="info-table">
-        <tr><th>Command</th><th>Action</th></tr>
-        <tr><td><code>/im-list-projects</code></td><td>List all configured projects</td></tr>
-        <tr><td><code>/im-add-project &lt;name&gt; &lt;dir&gt;</code></td><td>Add project, create channel</td></tr>
-        <tr><td><code>/im-remove-project &lt;name&gt;</code></td><td>Remove project</td></tr>
-        <tr><td><code>/im-reload-config</code></td><td>Hot-reload config file</td></tr>
-        <tr><td><code>/im-done</code></td><td>Mark thread completed</td></tr>
-        <tr><td><code>/im-reopen</code></td><td>Reopen completed thread</td></tr>
-        <tr><td><code>/im-init</code></td><td>Lark only: save owner, join groups</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Key Methods</div>
-      <table class="info-table">
-        <tr><td><code>${fa('router','getProject','getProject(channelId, platform)')}</code></td><td>Resolve channel to project config</td></tr>
-        <tr><td><code>${fa('router','parseManagementCommand','parseManagementCommand(content)')}</code></td><td>Detect /im-* commands</td></tr>
-        <tr><td><code>${fa('router','setupProject','setupProject(name, channelId, platform)')}</code></td><td>Register channel mapping</td></tr>
-      </table>`
+    id: 'processing',
+    name: 'Processing',
+    color: '#4cc9f0',
+    modules: ['session', 'formatter', 'store', 'config'],
+    flex: 3,
   },
   {
-    id: 'webadapter', x: 560, y: 620, w: 440, color: '#4cc9f0',
-    title: 'WebAdapter', badge: 'HTTP + WS', dot: '#4cc9f0',
-    html: `
-      <div class="section-label">Internal State Maps</div>
-      <table class="info-table">
-        <tr><td><code>subscriptions</code></td><td>Map&lt;threadId, Set&lt;WS&gt;&gt; — per-thread subscribers</td></tr>
-        <tr><td><code>streamBuffers</code></td><td>Map&lt;threadId, string&gt; — current stream for recovery</td></tr>
-        <tr><td><code>messageThreadMap</code></td><td>Map&lt;msgId, threadId&gt; — message to thread lookup</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Extended Methods (beyond PlatformAdapter)</div>
-      <table class="info-table">
-        <tr><th>Method</th><th>Purpose</th></tr>
-        <tr><td><code>${fa('webadapter','onAbort','onAbort(handler)')}</code></td><td>Register abort callback for sessionManager.abort(threadKey)</td></tr>
-        <tr><td><code>${fa('webadapter','sendDone','sendDone(threadId, tokens)')}</code></td><td>Broadcast chat.done + clear buffer</td></tr>
-        <tr><td><code>${fa('webadapter','sendSessionUpdate','sendSessionUpdate()')}</code></td><td>Broadcast session.update to all clients</td></tr>
-        <tr><td><code>${fa('webadapter','sendError','sendError(threadId, err)')}</code></td><td>Broadcast chat.error + clear buffer</td></tr>
-        <tr><td><code>${fa('webadapter','sendToThread','sendToThread(threadId, msg)')}</code></td><td>Send to subscribers, fallback broadcast</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">PlatformAdapter Interface Methods</div>
-      <table class="info-table">
-        <tr><td><code>${fa('webadapter','sendMessage','sendMessage()')}</code></td><td>Send chat.message to thread subscribers</td></tr>
-        <tr><td><code>${fa('webadapter','editMessage','editMessage()')}</code></td><td>Send chat.update to thread subscribers</td></tr>
-        <tr><td><code>${fa('webadapter','uploadFile','uploadFile()')}</code></td><td>Send chat.file (base64) to thread</td></tr>
-        <tr><td><code>addReaction()</code></td><td>No-op for web</td></tr>
-      </table>`
-  },
-  {
-    id: 'wsprotocol', x: 560, y: 1280, w: 440, color: '#34d399',
-    title: 'WebSocket Protocol', badge: 'Client <-> Server', dot: '#34d399',
-    html: `
-      <div class="section-label">Client to Server</div>
-      <table class="info-table">
-        <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
-        <tr><td><code>chat.send</code></td><td>project, message, threadKey?, sessionId?</td><td>Send message, auto-subscribe</td></tr>
-        <tr><td><code>chat.subscribe</code></td><td>threadKey</td><td>Subscribe; if active, get chat.recover</td></tr>
-        <tr><td><code>chat.abort</code></td><td>threadKey</td><td>Abort Claude process (SIGTERM)</td></tr>
-        <tr><td><code>sync.state</code></td><td><em>none</em></td><td>Request state (auto on connect)</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Server to Client</div>
-      <table class="info-table">
-        <tr><th>Type</th><th>Description</th></tr>
-        <tr><td><code>chat.message</code></td><td>New message (initial "Thinking..." or chunks)</td></tr>
-        <tr><td><code>chat.update</code></td><td>Streaming update — replaces content</td></tr>
-        <tr><td><code>chat.done</code></td><td>Stream complete, clears buffer</td></tr>
-        <tr><td><code>chat.error</code></td><td>Error during processing</td></tr>
-        <tr><td><code>chat.file</code></td><td>File attachment (image/text, base64)</td></tr>
-        <tr><td><code>chat.recover</code></td><td>On subscribe if active stream — buffered content</td></tr>
-        <tr><td><code>session.update</code></td><td>Sidebar refresh (new/renamed session)</td></tr>
-        <tr><td><code>sync.state</code></td><td>activeSessions[], bufferedOutput</td></tr>
-        <tr><td><code>error</code></td><td>Protocol error (INVALID_JSON, UNKNOWN_TYPE)</td></tr>
-      </table>`
-  },
-
-  // ── Column 3: Processing (x: 1080) ──
-  {
-    id: 'session', x: 1080, y: 60, w: 460, color: '#4cc9f0',
-    title: 'SessionManager', badge: 'core/session.ts', dot: '#4cc9f0',
-    html: `
-      <div class="section-label">State Machine</div>
-      <div class="state-row">
-        <span class="state-pill s-active">Queued</span>
-        <span class="arrow-label">thread free</span>
-        <span class="state-pill">WaitingSlot</span>
-        <span class="arrow-label">slot available</span>
-        <span class="state-pill">Running</span>
-      </div>
-      <div class="state-row">
-        <span class="state-pill s-green">Done</span>
-        <span class="state-pill s-red">Error</span>
-        <span class="state-pill s-yellow">Aborted</span>
-      </div>
-      <div class="desc-text">Active: Map&lt;threadKey, ChildProcess&gt;. Max concurrent: 5 (default). Thread busy = queue. All slots full = poll 500ms.</div>
-      <div class="separator"></div>
-      <div class="section-label">Concurrency Queue (FIFO per-thread)</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Queue exists for threadKey -> push & await</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">Dequeued -> wait for active.size &lt; maxConcurrentProcesses</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">Call onStart(), spawn process</div></div>
-      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">On close -> shift next from queue or delete</div></div>
-      <div class="desc-text">Same thread = sequential. Different threads = parallel up to limit.</div>
-      <div class="separator"></div>
-      <div class="section-label">Process Spawn</div>
-      <pre class="code-block"><span class="fn">${fa('session','spawn','spawn')}</span>(<span class="prop">claudeConfig.command</span>, [
-  <span class="str">"--print"</span>,
-  <span class="str">"--output-format"</span>, <span class="str">"stream-json"</span>,
-  <span class="str">"--model"</span>, model,
-  <span class="str">"--resume"</span>, sessionId,
-  <span class="str">"-p"</span>, fullMessage,
-], {
-  <span class="prop">cwd</span>: projectDir,
-  <span class="prop">env</span>: { ...process.env },
-  <span class="prop">stdio</span>: [<span class="str">"ignore"</span>, <span class="str">"pipe"</span>, <span class="str">"pipe"</span>],
-});</pre>
-      <div class="desc-text">Stdout via readline, each line parsed as JSON (StreamEvent). Stderr accumulated for errors.</div>
-      <div class="separator"></div>
-      <div class="section-label">SessionResult Interface</div>
-      <pre class="code-block"><span class="kw">interface</span> <span class="tp">SessionResult</span> {
-  <span class="prop">sessionId</span>: <span class="tp">string</span>;
-  <span class="prop">text</span>: <span class="tp">string</span>;
-  <span class="prop">success</span>: <span class="tp">boolean</span>;
-  <span class="prop">inputTokens</span>: <span class="tp">number</span>;
-  <span class="prop">outputTokens</span>: <span class="tp">number</span>;
-  <span class="prop">cacheReadTokens</span>: <span class="tp">number</span>;
-  <span class="prop">cacheCreationTokens</span>: <span class="tp">number</span>;
-}</pre>
-      <div class="separator"></div>
-      <div class="section-label">Key Methods</div>
-      <table class="info-table">
-        <tr><td><code>${fa('session','invoke','invoke(threadKey, dir, sessionId, msg)')}</code></td><td>Queue & spawn Claude process</td></tr>
-        <tr><td><code>${fa('session','abort','abort(threadKey)')}</code></td><td>SIGTERM active process</td></tr>
-        <tr><td><code>${fa('session','abortAll','abortAll()')}</code></td><td>SIGTERM all processes (shutdown)</td></tr>
-        <tr><td><code>getActiveCount()</code></td><td>Current running processes</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Event Callback</div>
-      <table class="info-table">
-        <tr><td><code>${fa('session','onEvent','onEvent(threadKey, event)')}</code></td><td>Stream event dispatched to adapter</td></tr>
-      </table>`
-  },
-  {
-    id: 'formatter', x: 1080, y: 920, w: 460, color: '#4cc9f0',
-    title: 'Formatter', badge: 'core/formatter.ts', dot: '#4cc9f0',
-    html: `
-      <div class="section-label">Pipeline Steps</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text"><strong>${fa('formatter','extractReactions','extractReactions()')}</strong> — strip [react:emoji] from end -> {cleanText, reactions[]}</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text"><strong>${fa('formatter','formatOutput','formatOutput()')}</strong> — &le;maxLen: single. &le;maxLen*5: splitText [i/N]. >maxLen*5: summary + .md attachment</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text"><strong>${fa('formatter','extractImages','extractImages()')}</strong> — match image paths -> Attachment[] for upload</div></div>
-      <div class="separator"></div>
-      <div class="section-label">splitText Detail</div>
-      <div class="desc-text">${fa('formatter','splitText','splitText()')} — Split at: newlines first, then spaces, then hard break. Each chunk gets <code>[i/N]</code> prefix (12 chars reserved).</div>
-      <div class="separator"></div>
-      <div class="section-label">Platform Limits (maxMessageLength)</div>
-      <table class="info-table">
-        <tr><td><span class="tag tag-purple">Discord</span></td><td>2,000 chars</td></tr>
-        <tr><td><span class="tag tag-cyan">Lark</span></td><td>30,000 chars</td></tr>
-        <tr><td><span class="tag tag-green">Web</span></td><td>100,000 chars</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Return to Adapter</div>
-      <table class="info-table">
-        <tr><td><code>formatted messages</code></td><td>-> adapter.editMessage()</td></tr>
-        <tr><td><code>chunks</code></td><td>-> adapter.sendMessage()</td></tr>
-        <tr><td><code>attachments</code></td><td>-> adapter.uploadFile()</td></tr>
-        <tr><td><code>reactions</code></td><td>-> adapter.addReaction()</td></tr>
-      </table>`
-  },
-
-  // ── Column 4: External (x: 1620) ──
-  {
-    id: 'claude', x: 1620, y: 60, w: 450, color: '#fb923c',
-    title: 'Claude Code', badge: 'child process', dot: '#fb923c',
-    html: `
-      <div class="section-label">Stream Events (NDJSON on stdout)</div>
-      <pre class="code-block"><span class="kw">interface</span> <span class="tp">${fa('claude','StreamInitEvent','StreamInitEvent')}</span> {
-  <span class="prop">type</span>: <span class="str">"system"</span>; <span class="prop">subtype</span>: <span class="str">"init"</span>;
-  <span class="prop">session_id</span>: <span class="tp">string</span>;
-}
-
-<span class="kw">interface</span> <span class="tp">${fa('claude','StreamAssistantEvent','StreamAssistantEvent')}</span> {
-  <span class="prop">type</span>: <span class="str">"assistant"</span>;
-  <span class="prop">message</span>: {
-    <span class="prop">content</span>: <span class="tp">Array&lt;
-      | { type: "text"; text: string }
-      | { type: "tool_use"; name: string }
-    &gt;</span>;
-  };
-}
-
-<span class="kw">interface</span> <span class="tp">${fa('claude','StreamResultEvent','StreamResultEvent')}</span> {
-  <span class="prop">type</span>: <span class="str">"result"</span>;
-  <span class="prop">subtype</span>: <span class="str">"success"</span> | <span class="str">"error"</span>;
-  <span class="prop">result</span>: <span class="tp">string</span>;
-  <span class="prop">session_id</span>: <span class="tp">string</span>;
-  <span class="prop">usage</span>?: { input_tokens, output_tokens, ... };
-}</pre>
-      <div class="separator"></div>
-      <div class="section-label">AskUserQuestion Interception</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Detect tool_use name === "${fa('claude','AskUserQuestion','AskUserQuestion')}"</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">Store in lastAskQuestions</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">After invoke, format & send questions to user</div></div>
-      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">pendingAsks Map with Promise resolve</div></div>
-      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">Next user message resolves promise</div></div>
-      <div class="flow-step"><div class="flow-num">6</div><div class="flow-text">Parse answer ("AB" or text), re-invoke --resume</div></div>`
-  },
-  {
-    id: 'store', x: 1620, y: 680, w: 450, color: '#71717a',
-    title: 'SQLite Store', badge: 'WAL mode', dot: '#71717a',
-    html: `
-      <div class="section-label">Schema: threads</div>
-      <pre class="code-block">thread_id    TEXT  PK
-platform     TEXT  PK
-channel_id   TEXT
-session_id   TEXT
-project_name TEXT
-status       TEXT  "active | done | archived"
-name         TEXT
-created_at   DATETIME</pre>
-      <div class="separator"></div>
-      <div class="section-label">Schema: messages</div>
-      <pre class="code-block">message_id          TEXT  PK
-platform            TEXT  PK
-thread_id           TEXT  FK
-is_bot              BOOLEAN
-content_summary     TEXT
-input_tokens        INTEGER
-output_tokens       INTEGER
-cache_read_tokens   INTEGER
-cache_creation_tokens INTEGER
-model               TEXT
-created_at          DATETIME</pre>
-      <div class="desc-text">Index: <code>idx_messages_thread(thread_id, platform)</code></div>
-      <div class="separator"></div>
-      <div class="section-label">Schema: pending_restarts</div>
-      <pre class="code-block">thread_id   TEXT  PK
-platform    TEXT  PK
-created_at  DATETIME</pre>
-      <div class="separator"></div>
-      <div class="section-label">Store API Methods (13)</div>
-      <table class="info-table">
-        <tr><th>Method</th><th>SQL Pattern</th></tr>
-        <tr><td><code>${fa('store','upsertThread','upsertThread()')}</code></td><td>INSERT ... ON CONFLICT DO UPDATE</td></tr>
-        <tr><td><code>${fa('store','getThread','getThread()')}</code></td><td>SELECT WHERE thread_id=? AND platform=?</td></tr>
-        <tr><td><code>${fa('store','updateThreadStatus','updateThreadStatus()')}</code></td><td>UPDATE SET status=?</td></tr>
-        <tr><td><code>${fa('store','archiveThread','archiveThread()')}</code></td><td>UPDATE SET status='archived'</td></tr>
-        <tr><td><code>${fa('store','deleteThread','deleteThread()')}</code></td><td>DELETE messages + DELETE thread</td></tr>
-        <tr><td><code>${fa('store','saveMessage','saveMessage()')}</code></td><td>INSERT OR REPLACE with tokens</td></tr>
-        <tr><td><code>${fa('store','getSessionTokens','getSessionTokens()')}</code></td><td>SUM WHERE thread_id=? AND is_bot=1</td></tr>
-        <tr><td><code>getProjectTokens()</code></td><td>SUM JOIN threads WHERE project=?</td></tr>
-        <tr><td><code>${fa('store','getDailyTokens','getDailyTokens()')}</code></td><td>GROUP BY DATE, model</td></tr>
-        <tr><td><code>${fa('store','getOverviewTokens','getOverviewTokens()')}</code></td><td>GROUP BY thread_id, platform</td></tr>
-        <tr><td><code>${fa('store','markPendingRestart','markPendingRestart()')}</code></td><td>INSERT OR IGNORE</td></tr>
-        <tr><td><code>${fa('store','getPendingRestarts','getPendingRestarts()')}</code></td><td>JOIN threads on pending_restarts</td></tr>
-        <tr><td><code>${fa('store','listSessions','listSessions()')}</code></td><td>List threads, optional project filter</td></tr>
-      </table>
-      <div class="desc-text">Indexes: idx_messages_thread, idx_threads_project</div>`
-  },
-
-  // ── Column 5: Supporting (x: 2150) ──
-  {
-    id: 'config', x: 2150, y: 60, w: 420, color: '#71717a',
-    title: 'Config', badge: 'YAML + Env', dot: '#71717a',
-    html: `
-      <div class="section-label">AppConfig Interface</div>
-      <pre class="code-block"><span class="kw">interface</span> <span class="tp">AppConfig</span> {
-  <span class="prop">lark</span>: { appId, appSecret, ownerOpenId? };
-  <span class="prop">discord</span>: { token };
-  <span class="prop">projects</span>: <span class="tp">ProjectConfig[]</span>;
-  <span class="prop">claude</span>: <span class="tp">ClaudeConfig</span>;
-  <span class="prop">formatter</span>: <span class="tp">FormatterConfig</span>;
-}</pre>
-      <div class="separator"></div>
-      <div class="section-label">ProjectConfig Interface</div>
-      <pre class="code-block"><span class="kw">interface</span> <span class="tp">ProjectConfig</span> {
-  <span class="prop">name</span>: <span class="tp">string</span>;
-  <span class="prop">directory</span>: <span class="tp">string</span>;
-  <span class="prop">model</span>?: <span class="tp">string</span>;
-  <span class="prop">platforms</span>: Partial&lt;Record&lt;Platform, boolean&gt;&gt;;
-}</pre>
-      <div class="separator"></div>
-      <div class="section-label">ClaudeConfig + FormatterConfig</div>
-      <pre class="code-block"><span class="kw">interface</span> <span class="tp">ClaudeConfig</span> {
-  <span class="prop">command</span>: <span class="str">"claude"</span>;
-  <span class="prop">defaultArgs</span>: <span class="tp">string[]</span>;
-  <span class="prop">bufferInterval</span>: <span class="tp">number</span>;
-  <span class="prop">timeout</span>: <span class="tp">number</span>;
-}
-<span class="kw">interface</span> <span class="tp">FormatterConfig</span> {
-  <span class="prop">maxMessageLength</span>: Record&lt;Platform, number&gt;;
-  <span class="prop">maxConcurrentProcesses</span>: <span class="tp">number</span>;
-}</pre>
-      <div class="separator"></div>
-      <div class="section-label">Env Overrides</div>
-      <table class="info-table">
-        <tr><th>Env Var</th><th>Overrides</th></tr>
-        <tr><td><code>CC2IM_CONFIG</code></td><td>Config file path</td></tr>
-        <tr><td><code>CC2IM_DB</code></td><td>Database path</td></tr>
-        <tr><td><code>DISCORD_TOKEN</code></td><td>discord.token</td></tr>
-        <tr><td><code>LARK_APP_ID</code></td><td>lark.appId</td></tr>
-        <tr><td><code>LARK_APP_SECRET</code></td><td>lark.appSecret</td></tr>
-      </table>
-      <div class="desc-text">Search: CC2IM_CONFIG env -> --config flag -> ~/.config/cc2im/config.yaml -> ./config.yaml</div>
-      <div class="separator"></div>
-      <div class="section-label">Key Methods</div>
-      <table class="info-table">
-        <tr><td><code>${fa('config','loadConfig','loadConfig(path)')}</code></td><td>Load & validate YAML config</td></tr>
-        <tr><td><code>${fa('config','saveConfig','saveConfig(config)')}</code></td><td>Write config to YAML file</td></tr>
-      </table>`
-  },
-  {
-    id: 'api', x: 2150, y: 800, w: 420, color: '#a78bfa',
-    title: 'REST API', badge: 'server/api.ts', dot: '#a78bfa',
-    html: `
-      <div class="section-label">Endpoints (12)</div>
-      <table class="info-table">
-        <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
-        <tr><td><span class="tag tag-green">GET</span></td><td><code>${fa('api','GET/config','/api/config')}</code></td><td>Config (secrets masked)</td></tr>
-        <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/config</code></td><td>Update config (allowlisted keys)</td></tr>
-        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/projects</code></td><td>List projects</td></tr>
-        <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/projects</code></td><td>Add project</td></tr>
-        <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/projects/:name</code></td><td>Update project</td></tr>
-        <tr><td><span class="tag tag-red">DEL</span></td><td><code>/api/projects/:name</code></td><td>Remove project</td></tr>
-        <tr><td><span class="tag tag-green">GET</span></td><td><code>${fa('api','GET/sessions','/api/sessions')}</code></td><td>List sessions</td></tr>
-        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sessions/:id/messages</code></td><td>Session messages</td></tr>
-        <tr><td><span class="tag tag-orange">PATCH</span></td><td><code>/api/sessions/:id/archive</code></td><td>Archive session</td></tr>
-        <tr><td><span class="tag tag-green">GET</span></td><td><code>${fa('api','GET/stats','/api/stats/tokens')}</code></td><td>Token stats</td></tr>
-        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/stats/overview</code></td><td>Per-project totals</td></tr>
-        <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/claude/test</code></td><td>Verify Claude CLI</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Key Methods</div>
-      <table class="info-table">
-        <tr><td><code>${fa('api','handleApi','handleApi(req, res)')}</code></td><td>Route /api/* requests</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Security</div>
-      <div class="desc-text"><strong>Secret masking:</strong> GET /api/config masks tokens as ***</div>
-      <div class="desc-text"><strong>Secret preservation:</strong> PUT keeps originals when value is ***</div>
-      <div class="desc-text"><strong>Body limit:</strong> 1 MB max</div>
-      <div class="desc-text"><strong>Prototype pollution:</strong> Only allowlisted keys applied</div>
-      <div class="desc-text"><strong>Path traversal:</strong> Static serving validates resolved path</div>`
-  },
-  {
-    id: 'cli', x: 2150, y: 1420, w: 420, color: '#34d399',
-    title: 'CLI', badge: 'entry point', dot: '#34d399',
-    html: `
-      <div class="section-label">Startup Flow (${fa('cli','main','main()')})</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">loadConfig(path) — YAML + env overrides</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">new Store(dbPath) — SQLite init</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">SessionManager + Formatter + Router init</div></div>
-      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Init adapters (Discord/Lark/Web if configured)</div></div>
-      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">start() -> setupProject() -> onMessage/onReaction</div></div>
-      <div class="flow-step"><div class="flow-num">6</div><div class="flow-text">${fa('cli','recoverPendingRestarts','recoverPendingRestarts()')} from DB</div></div>
-      <div class="flow-step"><div class="flow-num">7</div><div class="flow-text">Register SIGINT/SIGTERM handlers</div></div>
-      <div class="separator"></div>
-      <div class="section-label">Service Commands</div>
-      <table class="info-table">
-        <tr><td><code>install</code></td><td>Generate systemd/launchd unit, enable + start</td></tr>
-        <tr><td><code>uninstall</code></td><td>Stop, disable, remove unit</td></tr>
-        <tr><td><code>start|stop|restart</code></td><td>systemctl/launchctl control</td></tr>
-        <tr><td><code>status</code></td><td>Show service status</td></tr>
-        <tr><td><code>logs</code></td><td>journalctl / log tail</td></tr>
-        <tr><td><code>run</code></td><td>Foreground (dev mode)</td></tr>
-        <tr><td><code>web</code></td><td>Start with web UI on port</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">Graceful Shutdown (${fa('cli','gracefulShutdown','gracefulShutdown()')})</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Mark active threads as pending restart</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">sessionManager.abortAll() — SIGTERM all</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">adapter.stop() each</div></div>
-      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">store.close()</div></div>
-      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">process.exit(0)</div></div>
-      <div class="separator"></div>
-      <div class="section-label">Pending Restart Recovery</div>
-      <div class="desc-text">On startup: load pending -> clear table -> for each:</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Find adapter + project</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">invoke() with resume</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">Fail -> retry once (3s)</div></div>
-      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Second fail -> mark done, send error</div></div>`
-  },
-
-  // ── Bottom row: Cross-cutting ──
-  {
-    id: 'packages', x: 60, y: 1700, w: 480, color: '#34d399',
-    title: 'Packages', badge: 'Monorepo', dot: '#34d399',
-    html: `
-      <div class="section-label">Dependencies</div>
-      <table class="info-table">
-        <tr><th>Package</th><th>Description</th><th>Deps</th></tr>
-        <tr><td><span class="tag tag-cyan">core</span></td><td>Types, SessionManager, Router, Store, Formatter</td><td>--</td></tr>
-        <tr><td><span class="tag tag-green">cli</span></td><td>Entry point, adapters, service mgmt</td><td>core, server</td></tr>
-        <tr><td><span class="tag tag-purple">server</span></td><td>REST API handler</td><td>core</td></tr>
-        <tr><td><span class="tag tag-orange">ui</span></td><td>SvelteKit 5 + shadcn-svelte</td><td>HTTP+WS</td></tr>
-        <tr><td><span class="tag tag-pink">desktop</span></td><td>Tauri 2 native shell</td><td>embeds ui</td></tr>
-      </table>
-      <div class="separator"></div>
-      <div class="section-label">File Tree</div>
-      <pre class="code-block" style="font-size:10px;line-height:1.5"><span class="tp">core/src/</span> types, session, router, store, formatter, config
-<span class="tp">cli/src/</span>  index, cli, service
-  <span class="tp">adapters/</span> discord, lark, web
-<span class="tp">server/</span>   api.ts
-<span class="tp">ui/src/</span>   routes/, lib/stores/, lib/components/
-<span class="tp">desktop/</span>  Tauri 2 config + Rust shell</pre>`
-  },
-  {
-    id: 'types', x: 560, y: 1700, w: 480, color: '#4cc9f0',
-    title: 'Core Types', badge: '@cc2im/core', dot: '#4cc9f0',
-    html: `
-      <div class="section-label">Platform & IncomingMessage</div>
-      <pre class="code-block"><span class="kw">type</span> <span class="tp">Platform</span> = <span class="str">"lark"</span> | <span class="str">"discord"</span> | <span class="str">"web"</span>;
-
-<span class="kw">interface</span> <span class="tp">IncomingMessage</span> {
-  <span class="prop">platform</span>: <span class="tp">Platform</span>;
-  <span class="prop">channelId</span>: <span class="tp">string</span>;
-  <span class="prop">threadId</span>: <span class="tp">string | null</span>;
-  <span class="prop">messageId</span>: <span class="tp">string</span>;
-  <span class="prop">userId</span>: <span class="tp">string</span>;
-  <span class="prop">userName</span>: <span class="tp">string</span>;
-  <span class="prop">content</span>: <span class="tp">string</span>;
-  <span class="prop">attachments</span>: <span class="tp">Attachment[]</span>;
-  <span class="prop">replyToMessageId</span>?: <span class="tp">string</span>;
-}</pre>
-      <div class="separator"></div>
-      <div class="section-label">PlatformAdapter Interface</div>
-      <pre class="code-block"><span class="kw">interface</span> <span class="tp">PlatformAdapter</span> {
-  <span class="kw">readonly</span> <span class="prop">platform</span>: <span class="tp">Platform</span>;
-  <span class="fn">start</span>/<span class="fn">stop</span>/<span class="fn">setupProject</span>
-  <span class="fn">createThread</span>/<span class="fn">getThreadName</span>/<span class="fn">renameThread</span>
-  <span class="fn">sendMessage</span>/<span class="fn">editMessage</span>/<span class="fn">uploadFile</span>/<span class="fn">addReaction</span>
-  <span class="fn">onMessage</span>/<span class="fn">onReaction</span>
-}</pre>`
-  },
-  {
-    id: 'msgflow', x: 1080, y: 1700, w: 480, color: '#fbbf24',
-    title: 'Message Flow', badge: 'E2E 8-step', dot: '#fbbf24',
-    html: `
-      <div class="section-label">Full Sequence</div>
-      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text"><strong>Receive</strong> — Adapter constructs IncomingMessage</div></div>
-      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text"><strong>Route</strong> — {platform}:{channelId} -> project. Check /im-*</div></div>
-      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text"><strong>Thread</strong> — null threadId -> create. Async title via haiku</div></div>
-      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text"><strong>Persist</strong> — Save msg to DB. Send "Thinking..."</div></div>
-      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text"><strong>Invoke</strong> — Queue -> concurrency slot -> spawn claude</div></div>
-      <div class="flow-step"><div class="flow-num">6</div><div class="flow-text"><strong>Stream</strong> — NDJSON: init -> assistant -> result</div></div>
-      <div class="flow-step"><div class="flow-num">7</div><div class="flow-text"><strong>Live Update</strong> — editMessage every 100ms(web)/3s(discord)</div></div>
-      <div class="flow-step"><div class="flow-num">8</div><div class="flow-text"><strong>Format & Deliver</strong> — reactions, split, images, "done"</div></div>`
+    id: 'claude',
+    name: 'Claude',
+    color: '#fb923c',
+    modules: ['claude'],
+    flex: 1,
   },
 ];
 
-// ============================================================
-// FUNCTION-LEVEL CONNECTION DEFINITIONS
-// ============================================================
-const FN_CONNECTIONS = [
-  // ── Discord message flow ──
-  { id: 'c-discord-onmsg-router', from: 'discord:onMessage', to: 'router:getProject', label: 'onMessage()', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-router-getproj-session', from: 'router:getProject', to: 'session:invoke', label: 'getProject→invoke', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-session-invoke-spawn', from: 'session:invoke', to: 'session:spawn', label: 'queue→spawn', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-session-spawn-claude', from: 'session:spawn', to: 'claude:StreamInitEvent', label: 'spawn(claude)', style: 'solid', color: '#fb923c' },
-  { id: 'c-claude-result-session', from: 'claude:StreamResultEvent', to: 'session:onEvent', label: 'StreamResult', style: 'dashed', color: '#fb923c' },
-  { id: 'c-session-event-reactions', from: 'session:onEvent', to: 'formatter:extractReactions', label: 'SessionResult', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-fmt-reactions-output', from: 'formatter:extractReactions', to: 'formatter:formatOutput', label: 'cleanText', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-fmt-output-images', from: 'formatter:formatOutput', to: 'formatter:extractImages', label: 'chunks', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-fmt-images-discord-edit', from: 'formatter:extractImages', to: 'discord:editMessage', label: 'formatted', style: 'dashed', color: '#fb923c' },
-  { id: 'c-discord-edit-send', from: 'discord:editMessage', to: 'discord:sendMessage', label: 'chunks', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-discord-send-upload', from: 'discord:sendMessage', to: 'discord:uploadFile', label: 'attachments', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-discord-upload-react', from: 'discord:uploadFile', to: 'discord:addReaction', label: 'reactions', style: 'solid', color: '#4cc9f0' },
+const MODULE_FUNCTIONS = {
+  discord: [
+    { id: 'discord:onMessage', fn: 'onMessage()', entry: true, desc: 'Register incoming message callback. Constructs IncomingMessage with normalized fields (platform, channelId, threadId, content, attachments).', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:onReaction', fn: 'onReaction()', desc: 'Register reaction callback for thread management (/im-done, /im-reopen).', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:setupProject', fn: 'setupProject()', desc: 'Create or find cc2im-{project} text channel in Discord guild, register route.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:createThread', fn: 'createThread()', desc: 'Start a Discord thread from the first user message in a channel.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:sendMessage', fn: 'sendMessage()', desc: 'Post message to channel/thread. Used for additional chunks [2/N]... when text is split.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:editMessage', fn: 'editMessage()', desc: 'Update existing message content. Used for streaming live updates (every 3s) and final response.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:uploadFile', fn: 'uploadFile()', desc: 'Attach image files or full-output.md when response exceeds 5x platform limit.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:addReaction', fn: 'addReaction()', desc: 'Add emoji reactions extracted via [react:emoji] pattern from Claude response.', file: 'cli/src/adapters/discord.ts' },
+  ],
+  lark: [
+    { id: 'lark:onMessage', fn: 'onMessage()', entry: true, desc: 'Register Lark WebSocket event callback. Constructs IncomingMessage from Lark event payload.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:setupProject', fn: 'setupProject()', desc: 'Create group chat per project via Lark API, register route.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:sendMessage', fn: 'sendMessage()', desc: 'Post message via Lark API. Used for additional chunks when text split.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:editMessage', fn: 'editMessage()', desc: 'Update message content via Lark API. Live update every 3s during streaming.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:uploadFile', fn: 'uploadFile()', desc: 'Upload files via Lark file API for image attachments.', file: 'cli/src/adapters/lark.ts' },
+  ],
+  webui: [
+    { id: 'webui:chat.send', fn: 'chat.send', entry: true, desc: 'WebSocket message from browser. Fields: project, message, threadKey?, sessionId?, model?. Auto-subscribes sender.', file: 'ui/src/lib/stores/chat.ts' },
+    { id: 'webui:chat.subscribe', fn: 'chat.subscribe', entry: true, desc: 'Subscribe to thread events. If stream active, server sends chat.recover with full buffered content.', file: 'ui/src/lib/stores/connection.ts' },
+    { id: 'webui:chat.abort', fn: 'chat.abort', entry: true, desc: 'Abort active Claude process for thread. Sends SIGTERM via SessionManager.', file: 'ui/src/lib/stores/chat.ts' },
+    { id: 'webui:fetch', fn: 'fetch(/api/*)', entry: true, desc: 'HTTP request from browser to REST API endpoints. Config, projects, sessions, stats.', file: 'ui/src/routes/' },
+  ],
+  webadapter: [
+    { id: 'webadapter:messageHandler', fn: 'messageHandler()', desc: 'Parse incoming WS message, auto-subscribe sender to thread, dispatch to handleMessage().', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:onAbort', fn: 'onAbort()', desc: 'Register abort callback → sessionManager.abort(threadKey). Triggered by chat.abort.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendMessage', fn: 'sendMessage()', desc: 'Send chat.message to thread subscribers. Initial "⏳ Thinking..." or additional chunks.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:editMessage', fn: 'editMessage()', desc: 'Send chat.update to thread subscribers. Replaces content with latest buffered text + status.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendDone', fn: 'sendDone()', desc: 'Broadcast chat.done with token stats. Clears stream buffer for thread.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendSessionUpdate', fn: 'sendSessionUpdate()', desc: 'Broadcast session.update to ALL clients for sidebar refresh (new/renamed session).', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendError', fn: 'sendError()', badge: 'catch', desc: 'Broadcast chat.error + clear stream buffer. Called via catch handler on process failure or abort.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:subscriptions', fn: 'subscriptions.add()', desc: 'Map<threadId, Set<WS>>. Add WS client to per-thread subscriber set.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:streamBuffers', fn: 'streamBuffers.get()', desc: 'Map<threadId, string>. Get current stream content for recovery on subscribe.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendToThread', fn: 'sendToThread()', desc: 'Send to thread subscribers only, fallback to broadcast if no subscribers.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:httpHandler', fn: 'HTTP handler', badge: 'cb', desc: 'Route HTTP requests via Node http.createServer callback: /api/* → handleApi(), other paths → serveStatic(). 1MB body limit.', file: 'cli/src/adapters/web.ts' },
+  ],
+  router: [
+    { id: 'router:getProject', fn: 'getProject()', desc: 'Map {platform}:{channelId} → ProjectConfig. Returns null if channel not registered.', file: 'core/src/router.ts' },
+    { id: 'router:parseCmd', fn: 'parseManagementCmd()', entry: true, desc: 'Detect /im-* commands: list-projects, add-project, remove-project, reload-config, done, reopen, init.', file: 'core/src/router.ts' },
+    { id: 'router:setupProject', fn: 'setupProject()', desc: 'Register channel mapping: {platform}:{channelId} → project name. Called at startup.', file: 'core/src/router.ts' },
+  ],
+  session: [
+    { id: 'session:invoke', fn: 'invoke()', desc: 'Queue message if thread busy, wait for concurrency slot (max 5), then spawn Claude process. Per-thread FIFO queue.', file: 'core/src/session.ts' },
+    { id: 'session:spawn', fn: 'spawn()', desc: 'Start: claude --print --output-format stream-json --model {model} --resume {sessionId} -p {message}. cwd=projectDir.', file: 'core/src/session.ts' },
+    { id: 'session:onEvent', fn: 'onEvent()', badge: 'cb', desc: 'Stream callback invoked by readline handler for each NDJSON line from stdout. Accumulate buffered text, track tool activities.', file: 'core/src/session.ts' },
+    { id: 'session:abort', fn: 'abort()', desc: 'Send SIGTERM to active Claude child process for given threadKey.', file: 'core/src/session.ts' },
+    { id: 'session:abortAll', fn: 'abortAll()', desc: 'SIGTERM all running Claude processes. Called during graceful shutdown.', file: 'core/src/session.ts' },
+  ],
+  claude: [
+    { id: 'claude:StreamInit', fn: 'StreamInit', badge: 'cb', desc: 'type: "system", subtype: "init". Read via readline callback on stdout. Captures session_id for --resume on next message.', file: 'Claude Code stdout' },
+    { id: 'claude:StreamAssistant', fn: 'StreamAssistant', badge: 'cb', desc: 'type: "assistant". Read via readline callback on stdout. Content array: text blocks + tool_use blocks. Emitted multiple times during response.', file: 'Claude Code stdout' },
+    { id: 'claude:StreamResult', fn: 'StreamResult', badge: 'cb', desc: 'type: "result", subtype: "success"|"error". Read via readline callback on stdout. Final text + usage (input_tokens, output_tokens, cache_read, cache_creation).', file: 'Claude Code stdout' },
+    { id: 'claude:AskUser', fn: 'AskUserQuestion', desc: 'Tool interception: detect tool_use name="AskUserQuestion", store questions, send to user, await reply, re-invoke with --resume.', file: 'cli/src/index.ts' },
+  ],
+  formatter: [
+    { id: 'formatter:extractReactions', fn: 'extractReactions()', desc: 'Strip [react:emoji] patterns from end of text. Returns {cleanText, reactions: string[]}.', file: 'core/src/formatter.ts' },
+    { id: 'formatter:formatOutput', fn: 'formatOutput()', desc: '≤maxLen → single msg. ≤maxLen×5 → splitText() with [i/N] prefix. >maxLen×5 → generateSummary() + full-output.md.', file: 'core/src/formatter.ts' },
+    { id: 'formatter:extractImages', fn: 'extractImages()', desc: 'Match image file paths (png/jpg/gif/svg) in response text → Attachment[] for upload.', file: 'core/src/formatter.ts' },
+  ],
+  store: [
+    { id: 'store:upsertThread', fn: 'upsertThread()', desc: 'INSERT ... ON CONFLICT DO UPDATE SET session_id, name. Creates or updates thread record.', file: 'core/src/store.ts' },
+    { id: 'store:saveMessage', fn: 'saveMessage()', desc: 'INSERT OR REPLACE with content_summary, token counts (input, output, cache_read, cache_creation), model.', file: 'core/src/store.ts' },
+    { id: 'store:getThread', fn: 'getThread()', desc: 'SELECT * WHERE thread_id=? AND platform=?. Returns thread record or null.', file: 'core/src/store.ts' },
+    { id: 'store:getSessionTokens', fn: 'getSessionTokens()', desc: 'SUM(tokens) WHERE thread_id=? AND is_bot=1. Cumulative token usage for a session.', file: 'core/src/store.ts' },
+    { id: 'store:listSessions', fn: 'listSessions()', desc: 'List threads with optional project filter. Excludes archived by default.', file: 'core/src/store.ts' },
+    { id: 'store:getDailyTokens', fn: 'getDailyTokens()', desc: 'GROUP BY DATE(created_at), model. Daily token breakdown for stats dashboard.', file: 'core/src/store.ts' },
+    { id: 'store:updateStatus', fn: 'updateThreadStatus()', desc: 'UPDATE SET status=? (active/done/archived). Used by /im-done and /im-reopen.', file: 'core/src/store.ts' },
+    { id: 'store:markPending', fn: 'markPendingRestart()', desc: 'INSERT OR IGNORE into pending_restarts. Marks active threads for recovery on next startup.', file: 'core/src/store.ts' },
+    { id: 'store:getPending', fn: 'getPendingRestarts()', desc: 'JOIN threads on pending_restarts. Returns threads that need session recovery.', file: 'core/src/store.ts' },
+    { id: 'store:close', fn: 'close()', desc: 'Close SQLite connection. Called during graceful shutdown.', file: 'core/src/store.ts' },
+  ],
+  config: [
+    { id: 'config:load', fn: 'loadConfig()', desc: 'Search: CC2IM_CONFIG env → --config flag → ~/.config/cc2im/config.yaml → ./config.yaml. Apply env var overrides.', file: 'core/src/config.ts' },
+    { id: 'config:save', fn: 'saveConfig()', desc: 'Write config to YAML. Secrets from env vars saved as empty string to avoid leaking.', file: 'core/src/config.ts' },
+  ],
+  api: [
+    { id: 'api:handleApi', fn: 'handleApi()', desc: '12 endpoints: GET/PUT /api/config, CRUD /api/projects, GET /api/sessions, GET /api/stats/tokens, POST /api/claude/test. Secret masking on GET.', file: 'server/src/api.ts' },
+  ],
+  cli: [
+    { id: 'cli:main', fn: 'main()', entry: true, desc: 'Entry point: loadConfig → Store → SessionManager → Formatter → Router → init adapters → setupProject → onMessage → recoverPending → signal handlers.', file: 'cli/src/index.ts' },
+    { id: 'cli:handleMessage', fn: 'handleMessage()', badge: 'orch', desc: 'Core orchestrator: route → persist → invoke → format → deliver. Coordinates all steps of message processing sequentially.', file: 'cli/src/index.ts' },
+    { id: 'cli:shutdown', fn: 'gracefulShutdown()', entry: true, desc: 'SIGINT/SIGTERM: markPendingRestart for active threads → abortAll → adapter.stop() → store.close() → exit(0).', file: 'cli/src/index.ts' },
+    { id: 'cli:recover', fn: 'recoverPending()', entry: true, desc: 'On startup: load pending → clear table → invoke() with --resume for each. Retry once after 3s on failure.', file: 'cli/src/index.ts' },
+    { id: 'cli:executeCmd', fn: 'executeCommand()', desc: 'Dispatch management commands: add/remove project, reload config, mark done/reopen, init owner.', file: 'cli/src/index.ts' },
+  ],
+};
 
-  // ── Persist ──
-  { id: 'c-session-invoke-upsert', from: 'session:invoke', to: 'store:upsertThread', label: 'upsertThread', style: 'dashed', color: '#3f3f46' },
-  { id: 'c-session-event-savemsg', from: 'session:onEvent', to: 'store:saveMessage', label: 'saveMessage', style: 'dashed', color: '#3f3f46' },
-
-  // ── Lark flow ──
-  { id: 'c-lark-onmsg-router', from: 'lark:onMessage', to: 'router:getProject', label: 'onMessage()', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-fmt-images-lark-edit', from: 'formatter:extractImages', to: 'lark:editMessage', label: 'formatted', style: 'dashed', color: '#fb923c' },
-
-  // ── Web flow ──
-  { id: 'c-webui-send-wa', from: 'webui:chat.send', to: 'webadapter:sendMessage', label: 'WS chat.send', style: 'solid', color: '#34d399' },
-  { id: 'c-wa-sendmsg-router', from: 'webadapter:sendMessage', to: 'router:getProject', label: 'getProject()', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-wa-sendmsg-session', from: 'webadapter:sendMessage', to: 'session:invoke', label: 'invoke()', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-fmt-images-wa-edit', from: 'formatter:extractImages', to: 'webadapter:editMessage', label: 'formatted', style: 'dashed', color: '#fb923c' },
-  { id: 'c-wa-edit-done', from: 'webadapter:editMessage', to: 'webadapter:sendDone', label: 'chat.done', style: 'solid', color: '#34d399' },
-
-  // ── Abort flow ──
-  { id: 'c-webui-abort-wa', from: 'webui:chat.abort', to: 'webadapter:onAbort', label: 'WS chat.abort', style: 'solid', color: '#fb923c' },
-  { id: 'c-wa-abort-session', from: 'webadapter:onAbort', to: 'session:abort', label: 'abort(threadKey)', style: 'dashed', color: '#fb923c' },
-
-  // ── API flow ──
-  { id: 'c-wa-sendmsg-api', from: 'webadapter:sendMessage', to: 'api:handleApi', label: '/api/* routes', style: 'solid', color: '#a78bfa' },
-  { id: 'c-api-list-sessions', from: 'api:handleApi', to: 'store:listSessions', label: 'listSessions()', style: 'dashed', color: '#3f3f46' },
-  { id: 'c-api-daily-tokens', from: 'api:handleApi', to: 'store:getDailyTokens', label: 'getDailyTokens()', style: 'dashed', color: '#3f3f46' },
-  { id: 'c-api-load-config', from: 'api:handleApi', to: 'config:loadConfig', label: 'loadConfig()', style: 'solid', color: '#a78bfa' },
-  { id: 'c-api-save-config', from: 'api:handleApi', to: 'config:saveConfig', label: 'saveConfig()', style: 'solid', color: '#a78bfa' },
-
-  // ── Startup flow ──
-  { id: 'c-cli-loadconfig', from: 'cli:main', to: 'config:loadConfig', label: 'loadConfig()', style: 'solid', color: '#34d399' },
-  { id: 'c-cli-upsert', from: 'cli:main', to: 'store:upsertThread', label: 'init DB', style: 'dashed', color: '#3f3f46' },
-  { id: 'c-cli-invoke', from: 'cli:main', to: 'session:invoke', label: 'via adapters', style: 'solid', color: '#4cc9f0' },
-  { id: 'c-cli-recover', from: 'cli:main', to: 'cli:recoverPendingRestarts', label: 'recover', style: 'solid', color: '#34d399' },
-  { id: 'c-recover-getpending', from: 'cli:recoverPendingRestarts', to: 'store:getPendingRestarts', label: 'getPending()', style: 'dashed', color: '#3f3f46' },
-  { id: 'c-recover-invoke', from: 'cli:recoverPendingRestarts', to: 'session:invoke', label: 'invoke(resume)', style: 'solid', color: '#4cc9f0' },
-
-  // ── Shutdown flow ──
-  { id: 'c-shutdown-mark', from: 'cli:gracefulShutdown', to: 'store:markPendingRestart', label: 'markPending()', style: 'dashed', color: '#3f3f46' },
-  { id: 'c-shutdown-abortall', from: 'cli:gracefulShutdown', to: 'session:abortAll', label: 'abortAll()', style: 'dashed', color: '#fb923c' },
-];
-
-// ============================================================
-// CHAIN DEFINITIONS
-// ============================================================
 const CHAINS = {
-  'discord-message': {
+  'discord:onMessage': {
     name: 'Discord Message',
-    desc: 'discord:onMessage -> ... -> addReaction',
-    fns: ['discord:onMessage', 'router:getProject', 'session:invoke', 'store:upsertThread', 'session:spawn', 'claude:StreamInitEvent', 'claude:StreamAssistantEvent', 'claude:StreamResultEvent', 'session:onEvent', 'store:saveMessage', 'formatter:extractReactions', 'formatter:formatOutput', 'formatter:extractImages', 'discord:editMessage', 'discord:sendMessage', 'discord:uploadFile', 'discord:addReaction'],
-    connections: ['c-discord-onmsg-router', 'c-router-getproj-session', 'c-session-invoke-upsert', 'c-session-invoke-spawn', 'c-session-spawn-claude', 'c-claude-result-session', 'c-session-event-savemsg', 'c-session-event-reactions', 'c-fmt-reactions-output', 'c-fmt-output-images', 'c-fmt-images-discord-edit', 'c-discord-edit-send', 'c-discord-send-upload', 'c-discord-upload-react']
+    edges: [
+      // entry → handleMessage
+      { from: 'discord:onMessage', to: 'cli:handleMessage', type: 'request' },
+      // handleMessage calls each step directly
+      { from: 'cli:handleMessage', to: 'router:getProject', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'session:invoke', type: 'request' },
+      // invoke internally calls spawn
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      // spawn starts claude process, readline reads stdout events via callback
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      // readline callback calls onEvent for each event
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      // after invoke resolves, handleMessage calls formatter + adapter
+      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:editMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:sendMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:uploadFile', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:addReaction', type: 'response' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'response' },
+    ]
   },
-  'lark-message': {
+  'lark:onMessage': {
     name: 'Lark Message',
-    desc: 'lark:onMessage -> ... -> editMessage',
-    fns: ['lark:onMessage', 'router:getProject', 'session:invoke', 'store:upsertThread', 'session:spawn', 'claude:StreamInitEvent', 'claude:StreamAssistantEvent', 'claude:StreamResultEvent', 'session:onEvent', 'store:saveMessage', 'formatter:extractReactions', 'formatter:formatOutput', 'formatter:extractImages', 'lark:editMessage'],
-    connections: ['c-lark-onmsg-router', 'c-router-getproj-session', 'c-session-invoke-upsert', 'c-session-invoke-spawn', 'c-session-spawn-claude', 'c-claude-result-session', 'c-session-event-savemsg', 'c-session-event-reactions', 'c-fmt-reactions-output', 'c-fmt-output-images', 'c-fmt-images-lark-edit']
+    edges: [
+      { from: 'lark:onMessage', to: 'cli:handleMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:getProject', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'response' },
+      { from: 'cli:handleMessage', to: 'lark:editMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'lark:sendMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'lark:uploadFile', type: 'response' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'response' },
+    ]
   },
-  'web-message': {
+  'webui:chat.send': {
     name: 'Web Message',
-    desc: 'webui:chat.send -> ... -> sendDone',
-    fns: ['webui:chat.send', 'webadapter:sendMessage', 'router:getProject', 'session:invoke', 'store:upsertThread', 'session:spawn', 'claude:StreamInitEvent', 'claude:StreamAssistantEvent', 'claude:StreamResultEvent', 'session:onEvent', 'store:saveMessage', 'formatter:extractReactions', 'formatter:formatOutput', 'formatter:extractImages', 'webadapter:editMessage', 'webadapter:sendDone'],
-    connections: ['c-webui-send-wa', 'c-wa-sendmsg-router', 'c-wa-sendmsg-session', 'c-session-invoke-upsert', 'c-session-invoke-spawn', 'c-session-spawn-claude', 'c-claude-result-session', 'c-session-event-savemsg', 'c-session-event-reactions', 'c-fmt-reactions-output', 'c-fmt-output-images', 'c-fmt-images-wa-edit', 'c-wa-edit-done']
+    edges: [
+      { from: 'webui:chat.send', to: 'webadapter:messageHandler', type: 'request' },
+      { from: 'webadapter:messageHandler', to: 'cli:handleMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:getProject', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'webadapter:sendMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'response' },
+      { from: 'cli:handleMessage', to: 'webadapter:editMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'response' },
+      // 外层 wrapper 调用（handleMessage 之后）
+      { from: 'webadapter:messageHandler', to: 'webadapter:sendDone', type: 'response' },
+    ]
   },
-  'web-subscribe': {
+  'webui:chat.subscribe': {
     name: 'Web Subscribe',
-    desc: 'webui:chat.subscribe -> ... -> chat.recover',
-    fns: ['webui:chat.subscribe', 'webadapter:sendToThread'],
-    connections: []
+    edges: [
+      { from: 'webui:chat.subscribe', to: 'webadapter:subscriptions', type: 'request' },
+      { from: 'webadapter:subscriptions', to: 'webadapter:streamBuffers', type: 'request' },
+      { from: 'webadapter:streamBuffers', to: 'webadapter:sendToThread', type: 'response' },
+    ]
   },
-  'web-abort': {
+  'webui:chat.abort': {
     name: 'Web Abort',
-    desc: 'webui:chat.abort -> ... -> session:abort',
-    fns: ['webui:chat.abort', 'webadapter:onAbort', 'session:abort'],
-    connections: ['c-webui-abort-wa', 'c-wa-abort-session']
+    edges: [
+      { from: 'webui:chat.abort', to: 'webadapter:onAbort', type: 'request' },
+      { from: 'webadapter:onAbort', to: 'session:abort', type: 'request' },
+      { from: 'session:abort', to: 'webadapter:sendError', type: 'response' },
+    ]
   },
-  'rest-api': {
-    name: 'REST API Call',
-    desc: '/api/* -> handleApi -> Store/Config',
-    fns: ['webadapter:sendMessage', 'api:handleApi', 'store:listSessions', 'store:getDailyTokens', 'config:loadConfig', 'config:saveConfig'],
-    connections: ['c-wa-sendmsg-api', 'c-api-list-sessions', 'c-api-daily-tokens', 'c-api-load-config', 'c-api-save-config']
+  'webui:fetch': {
+    name: 'REST API',
+    edges: [
+      { from: 'webui:fetch', to: 'webadapter:httpHandler', type: 'request' },
+      { from: 'webadapter:httpHandler', to: 'api:handleApi', type: 'request' },
+      { from: 'api:handleApi', to: 'store:listSessions', type: 'request' },
+      { from: 'api:handleApi', to: 'store:getDailyTokens', type: 'request' },
+      { from: 'api:handleApi', to: 'config:load', type: 'request' },
+      { from: 'api:handleApi', to: 'config:save', type: 'request' },
+    ]
   },
-  'management-cmd': {
-    name: 'Management Cmd',
-    desc: '/im-* -> parseManagementCommand -> execute',
-    fns: ['discord:onMessage', 'router:getProject', 'router:parseManagementCommand'],
-    connections: ['c-discord-onmsg-router']
-  },
-  'cli-startup': {
+  'cli:main': {
     name: 'CLI Startup',
-    desc: 'main() -> loadConfig -> init adapters',
-    fns: ['cli:main', 'config:loadConfig', 'store:upsertThread', 'session:invoke', 'cli:recoverPendingRestarts', 'store:getPendingRestarts'],
-    connections: ['c-cli-loadconfig', 'c-cli-upsert', 'c-cli-invoke', 'c-cli-recover', 'c-recover-getpending', 'c-recover-invoke']
+    edges: [
+      { from: 'cli:main', to: 'config:load', type: 'request' },
+      { from: 'cli:main', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:main', to: 'router:setupProject', type: 'request' },
+      { from: 'cli:main', to: 'discord:setupProject', type: 'request' },
+      { from: 'cli:main', to: 'lark:setupProject', type: 'request' },
+      { from: 'cli:main', to: 'cli:recover', type: 'request' },
+    ]
   },
-  'graceful-shutdown': {
+  'cli:shutdown': {
     name: 'Graceful Shutdown',
-    desc: 'SIGTERM -> markPendingRestart -> abortAll',
-    fns: ['cli:gracefulShutdown', 'store:markPendingRestart', 'session:abortAll'],
-    connections: ['c-shutdown-mark', 'c-shutdown-abortall']
+    edges: [
+      { from: 'cli:shutdown', to: 'store:markPending', type: 'request' },
+      { from: 'cli:shutdown', to: 'session:abortAll', type: 'request' },
+      { from: 'cli:shutdown', to: 'store:close', type: 'request' },
+    ]
   },
-  'pending-recovery': {
+  'cli:recover': {
     name: 'Pending Recovery',
-    desc: 'startup -> getPendingRestarts -> invoke',
-    fns: ['cli:recoverPendingRestarts', 'store:getPendingRestarts', 'session:invoke'],
-    connections: ['c-recover-getpending', 'c-recover-invoke']
+    edges: [
+      { from: 'cli:recover', to: 'store:getPending', type: 'request' },
+      { from: 'cli:recover', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:recover', to: 'discord:sendMessage', type: 'response' },
+    ]
+  },
+  'router:parseCmd': {
+    name: 'Management Command (/im-*)',
+    edges: [
+      { from: 'router:parseCmd', to: 'cli:executeCmd', type: 'request' },
+      { from: 'cli:executeCmd', to: 'config:save', type: 'request' },
+      { from: 'cli:executeCmd', to: 'store:updateStatus', type: 'request' },
+      { from: 'cli:executeCmd', to: 'discord:sendMessage', type: 'response' },
+    ]
   },
 };
 
-// ============================================================
-// RENDER NODES
-// ============================================================
-const canvas = document.getElementById('canvas');
-const nodeElements = {};
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
 
-NODES.forEach(n => {
-  const el = document.createElement('div');
-  el.className = 'node left-accent';
-  el.id = 'node-' + n.id;
-  el.style.cssText = `left:${n.x}px; top:${n.y}px; width:${n.w}px; border-left-color:${n.color};`;
-  el.innerHTML = `
-    <div class="node-head">
-      <span class="node-dot" style="background:${n.dot}"></span>
-      <span class="node-title">${n.title}</span>
-      <span class="node-badge">${n.badge}</span>
+let activeChain = null;
+let animating = false;
+let animSpeed = 1;
+let animFrame = null;
+let glowDots = [];
+const pillEls = {};     // fnId -> DOM element
+const pathEls = {};     // "from|to" -> SVG path element
+let svgEl, lanesEl, containerEl;
+
+// Build a lookup: moduleId -> laneIndex for connection routing
+const moduleLaneIndex = {};
+LANES.forEach((lane, i) => {
+  lane.modules.forEach(modId => { moduleLaneIndex[modId] = i; });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BUILD DOM
+// ═══════════════════════════════════════════════════════════════════
+
+function buildHeader() {
+  const header = document.getElementById('swim-header');
+  LANES.forEach(lane => {
+    const el = document.createElement('div');
+    el.className = 'lane-header';
+    el.style.setProperty('--lane-color', lane.color);
+    el.style.flex = lane.flex;
+    el.textContent = lane.name;
+    header.appendChild(el);
+  });
+}
+
+// Popover state
+let openPopover = null;
+
+function closePopover() {
+  if (openPopover) { openPopover.remove(); openPopover = null; }
+}
+
+function showPopover(fnData, modData, anchorEl) {
+  closePopover();
+  const pop = document.createElement('div');
+  pop.className = 'fn-popover';
+  pop.innerHTML = `
+    <div class="fn-popover-header">
+      <span class="pop-dot" style="background:${modData.color}"></span>
+      <span class="pop-module">${modData.name}</span>
+      <span class="pop-close" onclick="closePopover()">×</span>
     </div>
-    <div class="node-body">${n.html}</div>`;
-  canvas.appendChild(el);
-  nodeElements[n.id] = el;
-});
+    <div class="pop-fn">${fnData.fn}</div>
+    <div class="pop-desc">${fnData.desc || ''}</div>
+    ${fnData.file ? `<div class="pop-file">${fnData.file}</div>` : ''}`;
 
-// ============================================================
-// RENDER ENTRY POINT PANEL
-// ============================================================
-const entryBody = document.getElementById('entry-panel-body');
-Object.entries(CHAINS).forEach(([key, chain]) => {
-  const item = document.createElement('div');
-  item.className = 'entry-item';
-  item.dataset.chain = key;
-  item.innerHTML = `<span class="entry-dot"></span><span class="entry-name">${chain.name}</span><span class="entry-path">${chain.desc}</span>`;
-  item.addEventListener('click', () => toggleChain(key));
-  entryBody.appendChild(item);
-});
+  // Position relative to anchor pill
+  const rect = anchorEl.getBoundingClientRect();
+  const mainRect = document.getElementById('main').getBoundingClientRect();
+  pop.style.left = (rect.right - mainRect.left + 8) + 'px';
+  pop.style.top = (rect.top - mainRect.top - 4) + 'px';
 
-let entryPanelCollapsed = false;
-function toggleEntryPanel() {
-  entryPanelCollapsed = !entryPanelCollapsed;
-  document.getElementById('entry-panel-body').classList.toggle('collapsed', entryPanelCollapsed);
-  document.getElementById('speed-control').style.display = entryPanelCollapsed ? 'none' : 'flex';
-  document.querySelector('#entry-panel-header .toggle-btn').textContent = entryPanelCollapsed ? '+' : '_';
-}
+  document.getElementById('swim-container').appendChild(pop);
+  openPopover = pop;
 
-// Make entry panel draggable
-(function() {
-  const panel = document.getElementById('entry-panel');
-  const header = document.getElementById('entry-panel-header');
-  let dragging = false, dx = 0, dy = 0;
-  header.addEventListener('mousedown', (e) => {
-    if (e.target.classList.contains('toggle-btn')) return;
-    dragging = true;
-    const rect = panel.getBoundingClientRect();
-    dx = e.clientX - rect.left;
-    dy = e.clientY - rect.top;
-    e.preventDefault();
+  // Reposition if off-screen
+  requestAnimationFrame(() => {
+    const popRect = pop.getBoundingClientRect();
+    if (popRect.right > window.innerWidth - 10) {
+      pop.style.left = (rect.left - mainRect.left - popRect.width - 8) + 'px';
+    }
+    if (popRect.bottom > window.innerHeight - 10) {
+      pop.style.top = (rect.bottom - mainRect.top - popRect.height + 4) + 'px';
+    }
   });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    panel.style.left = (e.clientX - dx) + 'px';
-    panel.style.top = (e.clientY - dy) + 'px';
-    panel.style.right = 'auto';
-  });
-  window.addEventListener('mouseup', () => { dragging = false; });
-})();
-
-// ============================================================
-// FN-ANCHOR POSITION CALCULATION
-// ============================================================
-function getFnAnchorPosition(fnId) {
-  const el = document.querySelector(`.fn-anchor[data-fn="${fnId}"]`);
-  if (!el) return null;
-
-  // Get position relative to canvas by walking up the DOM
-  const canvasEl = document.getElementById('canvas');
-  const canvasRect = canvasEl.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-
-  // Convert screen coordinates to canvas coordinates (compensate for transform)
-  const x = (elRect.left + elRect.width / 2 - canvasRect.left) / scale;
-  const y = (elRect.top + elRect.height / 2 - canvasRect.top) / scale;
-
-  return { x, y, w: elRect.width / scale, h: elRect.height / scale };
 }
 
-// Get the node that contains a fn-anchor
-function getNodeForFn(fnId) {
-  const parts = fnId.split(':');
-  return parts[0];
-}
+function buildModuleGroup(modId) {
+  const mod = MODULES.find(m => m.id === modId);
+  const fns = MODULE_FUNCTIONS[modId] || [];
+  const group = document.createElement('div');
+  group.className = 'module-group';
+  group.dataset.module = modId;
+  const label = document.createElement('div');
+  label.className = 'module-label';
+  label.innerHTML = `<span class="module-label-dot" style="background:${mod.color}"></span>${mod.name}`;
+  group.appendChild(label);
+  fns.forEach(f => {
+    const pill = document.createElement('div');
+    pill.className = 'fn-pill';
+    pill.dataset.fn = f.id;
+    pill.style.paddingRight = '20px'; // room for info btn
 
-// Find a reasonable connection point on the node edge for a function
-function getFnEdgePoint(fnId, side) {
-  const pos = getFnAnchorPosition(fnId);
-  if (!pos) return null;
-
-  const nodeId = getNodeForFn(fnId);
-  const nodeData = NODES.find(n => n.id === nodeId);
-  if (!nodeData) return null;
-
-  const nodeEl = nodeElements[nodeId];
-  const nh = nodeEl.offsetHeight;
-
-  switch (side) {
-    case 'right':
-      return { x: nodeData.x + nodeData.w, y: pos.y };
-    case 'left':
-      return { x: nodeData.x, y: pos.y };
-    case 'top':
-      return { x: pos.x, y: nodeData.y };
-    case 'bottom':
-      return { x: pos.x, y: nodeData.y + nh };
-    default:
-      return pos;
-  }
-}
-
-// Determine which side of a node a function should connect from/to
-function determineSide(fromNodeId, toNodeId) {
-  const fromNode = NODES.find(n => n.id === fromNodeId);
-  const toNode = NODES.find(n => n.id === toNodeId);
-  if (!fromNode || !toNode) return { fromSide: 'right', toSide: 'left' };
-
-  const fromCX = fromNode.x + fromNode.w / 2;
-  const toNodeEl = nodeElements[toNode.id];
-  const fromNodeEl = nodeElements[fromNode.id];
-  const fromCY = fromNode.y + (fromNodeEl ? fromNodeEl.offsetHeight / 2 : 200);
-  const toCX = toNode.x + toNode.w / 2;
-  const toCY = toNode.y + (toNodeEl ? toNodeEl.offsetHeight / 2 : 200);
-
-  const dx = toCX - fromCX;
-  const dy = toCY - fromCY;
-
-  // If same node, use internal routing
-  if (fromNodeId === toNodeId) {
-    return { fromSide: 'internal', toSide: 'internal' };
-  }
-
-  let fromSide, toSide;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    fromSide = dx > 0 ? 'right' : 'left';
-    toSide = dx > 0 ? 'left' : 'right';
-  } else {
-    fromSide = dy > 0 ? 'bottom' : 'top';
-    toSide = dy > 0 ? 'top' : 'bottom';
-  }
-
-  return { fromSide, toSide };
-}
-
-// ============================================================
-// RENDER CONNECTIONS (SVG)
-// ============================================================
-const svgPathElements = {};
-
-function renderConnections() {
-  const svg = document.getElementById('connections');
-  let html = `<defs>
-    <marker id="arrow-cyan" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#4cc9f0"/>
-    </marker>
-    <marker id="arrow-dim" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#3f3f46"/>
-    </marker>
-    <marker id="arrow-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#a78bfa"/>
-    </marker>
-    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#fb923c"/>
-    </marker>
-    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#34d399"/>
-    </marker>
-    <marker id="arrow-yellow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#fbbf24"/>
-    </marker>
-    <filter id="glow-dot" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>`;
-
-  FN_CONNECTIONS.forEach(c => {
-    const fromNodeId = getNodeForFn(c.from);
-    const toNodeId = getNodeForFn(c.to);
-    const { fromSide, toSide } = determineSide(fromNodeId, toNodeId);
-
-    // For same-node connections, draw a small arc
-    if (fromSide === 'internal') {
-      const p1 = getFnAnchorPosition(c.from);
-      const p2 = getFnAnchorPosition(c.to);
-      if (!p1 || !p2) return;
-
-      const node = NODES.find(n => n.id === fromNodeId);
-      const arcX = node.x + node.w + 30;
-      const strokeDash = c.style === 'dashed' ? 'stroke-dasharray="6,4"' : '';
-      const markerColor = getMarkerColor(c.color);
-      const sw = c.color === '#3f3f46' ? '1' : '1.5';
-
-      html += `<path id="path-${c.id}" data-conn-id="${c.id}" d="M${node.x + node.w},${p1.y} C${arcX},${p1.y} ${arcX},${p2.y} ${node.x + node.w},${p2.y}"
-        fill="none" stroke="${c.color}" stroke-width="${sw}" ${strokeDash}
-        marker-end="url(#arrow-${markerColor})" opacity="0.7"/>`;
-
-      const mx = arcX - 8;
-      const my = (p1.y + p2.y) / 2;
-      html += renderLabel(mx, my, c.label, c.color);
-      return;
+    if (f.entry) {
+      pill.dataset.entry = 'true';
+      pill.innerHTML = `<span class="entry-dot"></span>${f.fn}`;
+      pill.addEventListener('click', (e) => {
+        if (e.target.closest('.fn-info-btn')) return;
+        toggleChain(f.id);
+      });
+    } else {
+      pill.textContent = f.fn;
     }
 
-    const p1 = getFnEdgePoint(c.from, fromSide);
-    const p2 = getFnEdgePoint(c.to, toSide);
+    // Badge for call type
+    if (f.badge) {
+      const badgeEl = document.createElement('span');
+      badgeEl.className = `fn-badge badge-${f.badge}`;
+      badgeEl.textContent = f.badge;
+      pill.appendChild(badgeEl);
+    }
 
-    if (!p1 || !p2) return;
+    // Info button
+    const btn = document.createElement('span');
+    btn.className = 'fn-info-btn';
+    btn.textContent = 'i';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showPopover(f, mod, pill);
+    });
+    pill.appendChild(btn);
 
-    const dx = Math.abs(p2.x - p1.x);
-    const dy = Math.abs(p2.y - p1.y);
-    const offset = Math.max(40, Math.min(120, dx * 0.4, dy * 0.4));
+    pill.title = f.id;
+    group.appendChild(pill);
+    pillEls[f.id] = pill;
+  });
+  return group;
+}
 
-    let cp1 = {...p1}, cp2 = {...p2};
-    if (fromSide === 'right') cp1.x += offset;
-    else if (fromSide === 'left') cp1.x -= offset;
-    else if (fromSide === 'top') cp1.y -= offset;
-    else if (fromSide === 'bottom') cp1.y += offset;
+function buildLanes() {
+  lanesEl = document.getElementById('swim-lanes');
+  LANES.forEach(lane => {
+    const laneEl = document.createElement('div');
+    laneEl.className = 'lane';
+    laneEl.dataset.lane = lane.id;
+    laneEl.style.flex = lane.flex;
 
-    if (toSide === 'right') cp2.x += offset;
-    else if (toSide === 'left') cp2.x -= offset;
-    else if (toSide === 'top') cp2.y -= offset;
-    else if (toSide === 'bottom') cp2.y += offset;
+    const items = lane.layout || lane.modules.map(m => m);
+    items.forEach(item => {
+      if (Array.isArray(item)) {
+        // Horizontal pair
+        const pair = document.createElement('div');
+        pair.className = 'module-pair';
+        item.forEach(modId => pair.appendChild(buildModuleGroup(modId)));
+        laneEl.appendChild(pair);
+      } else {
+        laneEl.appendChild(buildModuleGroup(item));
+      }
+    });
 
-    const strokeDash = c.style === 'dashed' ? 'stroke-dasharray="6,4"' : '';
-    const markerColor = getMarkerColor(c.color);
-    const sw = c.color === '#3f3f46' ? '1' : '1.5';
+    lanesEl.appendChild(laneEl);
+  });
+}
 
-    html += `<path id="path-${c.id}" data-conn-id="${c.id}" d="M${p1.x},${p1.y} C${cp1.x},${cp1.y} ${cp2.x},${cp2.y} ${p2.x},${p2.y}"
-      fill="none" stroke="${c.color}" stroke-width="${sw}" ${strokeDash}
-      marker-end="url(#arrow-${markerColor})" opacity="0.7"/>`;
+function buildEntryBar() {
+  const bar = document.getElementById('entry-bar');
+  // Collect all entry functions
+  const entries = [];
+  for (const [modId, fns] of Object.entries(MODULE_FUNCTIONS)) {
+    fns.filter(f => f.entry).forEach(f => {
+      if (CHAINS[f.id]) {
+        entries.push({ id: f.id, name: CHAINS[f.id].name });
+      }
+    });
+  }
+  entries.forEach(e => {
+    const chip = document.createElement('button');
+    chip.className = 'entry-chip';
+    chip.textContent = e.name;
+    chip.dataset.chain = e.id;
+    chip.addEventListener('click', () => toggleChain(e.id));
+    bar.appendChild(chip);
+  });
+}
 
-    const mx = (p1.x + p2.x + cp1.x + cp2.x) / 4;
-    const my = (p1.y + p2.y + cp1.y + cp2.y) / 4;
-    html += renderLabel(mx, my, c.label, c.color);
+// ═══════════════════════════════════════════════════════════════════
+// SVG CONNECTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+function getLaneIndex(fnId) {
+  const modId = fnId.split(':')[0];
+  return moduleLaneIndex[modId] !== undefined ? moduleLaneIndex[modId] : -1;
+}
+
+function pillCenter(fnId) {
+  const el = pillEls[fnId];
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const cr = containerEl.getBoundingClientRect();
+  return {
+    x: r.left - cr.left + r.width / 2,
+    y: r.top - cr.top + r.height / 2,
+    left: r.left - cr.left,
+    right: r.left - cr.left + r.width,
+    top: r.top - cr.top,
+    bottom: r.top - cr.top + r.height,
+    w: r.width,
+    h: r.height,
+  };
+}
+
+// Store user-adjusted control point offsets: key -> { cp1: {dx,dy}, cp2: {dx,dy} }
+const pathOffsets = {};
+
+function getDefaultCP(fromId, toId) {
+  const a = pillCenter(fromId);
+  const b = pillCenter(toId);
+  if (!a || !b) return null;
+
+  const fromMod = fromId.split(':')[0];
+  const toMod = toId.split(':')[0];
+
+  if (fromMod === toMod) {
+    const sx = a.x, sy = a.bottom + 2;
+    const ex = b.x, ey = b.top - 2;
+    const dy = ey - sy;
+    return { sx, sy, ex, ey, cp1x: sx, cp1y: sy + dy * 0.4, cp2x: ex, cp2y: ey - dy * 0.4, vertical: true };
+  }
+
+  const sx = a.right + 2, sy = a.y;
+  const ex = b.left - 2, ey = b.y;
+  const dx = ex - sx;
+  return { sx, sy, ex, ey, cp1x: sx + dx * 0.4, cp1y: sy, cp2x: sx + dx * 0.6, cp2y: ey, vertical: false };
+}
+
+function buildPath(fromId, toId) {
+  const cp = getDefaultCP(fromId, toId);
+  if (!cp) return '';
+
+  const key = `${fromId}|${toId}`;
+  const off = pathOffsets[key] || { cp1: {dx:0,dy:0}, cp2: {dx:0,dy:0} };
+
+  const c1x = cp.cp1x + off.cp1.dx;
+  const c1y = cp.cp1y + off.cp1.dy;
+  const c2x = cp.cp2x + off.cp2.dx;
+  const c2y = cp.cp2y + off.cp2.dy;
+
+  return `M ${cp.sx} ${cp.sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${cp.ex} ${cp.ey}`;
+}
+
+function buildAllPaths() {
+  svgEl = document.getElementById('svg-overlay');
+  // Clear old paths (keep defs)
+  const defs = svgEl.querySelector('defs');
+  svgEl.innerHTML = '';
+  svgEl.appendChild(defs);
+
+  // Mark pills that are sources of same-module vertical connections for extra spacing
+  document.querySelectorAll('.fn-pill.has-vertical-conn').forEach(el => el.classList.remove('has-vertical-conn'));
+  const vertConnSources = new Set();
+  for (const chain of Object.values(CHAINS)) {
+    chain.edges.forEach(e => {
+      const fromMod = e.from.split(':')[0];
+      const toMod = e.to.split(':')[0];
+      if (fromMod === toMod) vertConnSources.add(e.from);
+    });
+  }
+  vertConnSources.forEach(fnId => {
+    if (pillEls[fnId]) pillEls[fnId].classList.add('has-vertical-conn');
   });
 
-  // Add animation group container
-  html += '<g id="animation-layer"></g>';
-
-  svg.innerHTML = html;
-}
-
-function getMarkerColor(color) {
-  if (color === '#4cc9f0') return 'cyan';
-  if (color === '#3f3f46') return 'dim';
-  if (color === '#a78bfa') return 'purple';
-  if (color === '#34d399') return 'green';
-  if (color === '#fb923c') return 'orange';
-  return 'cyan';
-}
-
-function renderLabel(mx, my, label, color) {
-  const labelW = label.length * 5.5 + 8;
-  return `<rect x="${mx - 2}" y="${my - 9}" rx="3" ry="3"
-    width="${labelW}" height="14"
-    fill="#09090b" fill-opacity="0.85" stroke="${color}" stroke-width="0.5" stroke-opacity="0.3"/>
-  <text x="${mx + 2}" y="${my + 2}" fill="${color}" font-size="8.5"
-    font-family="'JetBrains Mono', monospace" opacity="0.85">${label}</text>`;
-}
-
-// Render after layout settles
-requestAnimationFrame(() => {
+  // Size SVG to container (re-measure after spacing changes)
   requestAnimationFrame(() => {
-    renderConnections();
-    updateMinimap();
-    fitToScreen();
+    const cr2 = containerEl.getBoundingClientRect();
+    svgEl.setAttribute('width', containerEl.scrollWidth);
+    svgEl.setAttribute('height', containerEl.scrollHeight);
+    svgEl.style.width = containerEl.scrollWidth + 'px';
+    svgEl.style.height = containerEl.scrollHeight + 'px';
   });
-});
+  const cr = containerEl.getBoundingClientRect();
+  svgEl.setAttribute('width', containerEl.scrollWidth);
+  svgEl.setAttribute('height', containerEl.scrollHeight);
+  svgEl.style.width = containerEl.scrollWidth + 'px';
+  svgEl.style.height = containerEl.scrollHeight + 'px';
 
-// ============================================================
-// CHAIN HIGHLIGHTING
-// ============================================================
-let activeChain = null;
-let animationFrameId = null;
-let animSpeed = 1;
+  // Deduplicate edges across all chains
+  const edgeSet = new Map();
+  for (const chain of Object.values(CHAINS)) {
+    chain.edges.forEach(e => {
+      const key = `${e.from}|${e.to}`;
+      if (!edgeSet.has(key)) edgeSet.set(key, { type: e.type });
+    });
+  }
 
-function setSpeed(speed, btn) {
-  animSpeed = speed;
-  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  for (const [key, info] of edgeSet) {
+    const [fromId, toId] = key.split('|');
+    const d = buildPath(fromId, toId);
+    if (!d) continue;
+
+    // Invisible hit area for dragging
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('d', d);
+    hit.classList.add('conn-hit');
+    hit.dataset.key = key;
+    svgEl.appendChild(hit);
+
+    // Visible path
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.classList.add('conn-path', info.type);
+    path.dataset.from = fromId;
+    path.dataset.to = toId;
+    path.setAttribute('marker-end', info.type === 'request' ? 'url(#arrow-req)' : 'url(#arrow-res)');
+    svgEl.appendChild(path);
+
+    pathEls[key] = path;
+    hitEls[key] = hit;
+  }
+
+  // Attach drag handlers
+  initPathDrag();
 }
+
+const hitEls = {};
+let dragState = null;
+
+function initPathDrag() {
+  const svg = document.getElementById('svg-overlay');
+
+  svg.addEventListener('mousedown', e => {
+    const hit = e.target.closest('.conn-hit');
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const key = hit.dataset.key;
+    const [fromId, toId] = key.split('|');
+    const cp = getDefaultCP(fromId, toId);
+    if (!cp) return;
+
+    const cr = containerEl.getBoundingClientRect();
+    const mx = e.clientX - cr.left + containerEl.scrollLeft;
+    const my = e.clientY - cr.top + containerEl.scrollTop;
+
+    // Determine which control point is closer to click
+    const off = pathOffsets[key] || { cp1: {dx:0,dy:0}, cp2: {dx:0,dy:0} };
+    const c1x = cp.cp1x + off.cp1.dx, c1y = cp.cp1y + off.cp1.dy;
+    const c2x = cp.cp2x + off.cp2.dx, c2y = cp.cp2y + off.cp2.dy;
+    const d1 = (mx - c1x) ** 2 + (my - c1y) ** 2;
+    const d2 = (mx - c2x) ** 2 + (my - c2y) ** 2;
+    const which = d1 <= d2 ? 'cp1' : 'cp2';
+
+    hit.classList.add('dragging');
+    dragState = { key, fromId, toId, which, startX: mx, startY: my, origOff: { ...off[which] } };
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!dragState) return;
+    const cr = containerEl.getBoundingClientRect();
+    const mx = e.clientX - cr.left + containerEl.scrollLeft;
+    const my = e.clientY - cr.top + containerEl.scrollTop;
+    const ddx = mx - dragState.startX;
+    const ddy = my - dragState.startY;
+
+    if (!pathOffsets[dragState.key]) {
+      pathOffsets[dragState.key] = { cp1: {dx:0,dy:0}, cp2: {dx:0,dy:0} };
+    }
+    pathOffsets[dragState.key][dragState.which] = {
+      dx: dragState.origOff.dx + ddx,
+      dy: dragState.origOff.dy + ddy,
+    };
+
+    // Rebuild just this path
+    const d = buildPath(dragState.fromId, dragState.toId);
+    if (pathEls[dragState.key]) pathEls[dragState.key].setAttribute('d', d);
+    if (hitEls[dragState.key]) hitEls[dragState.key].setAttribute('d', d);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (dragState) {
+      const hit = hitEls[dragState.key];
+      if (hit) hit.classList.remove('dragging');
+      dragState = null;
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CHAIN SELECTION & ANIMATION
+// ═══════════════════════════════════════════════════════════════════
 
 function toggleChain(chainId) {
   if (activeChain === chainId) {
-    clearChain();
+    resetChain();
     return;
   }
-  activateChain(chainId);
+  selectChain(chainId);
 }
 
-function activateChain(chainId) {
-  clearChain();
-  activeChain = chainId;
+function selectChain(chainId) {
   const chain = CHAINS[chainId];
   if (!chain) return;
 
-  const chainFnSet = new Set(chain.fns);
-  const chainConnSet = new Set(chain.connections);
+  stopAnimation();
+  activeChain = chainId;
 
-  // Collect nodes that contain chain functions
-  const chainNodeIds = new Set();
-  chain.fns.forEach(fnId => {
-    chainNodeIds.add(getNodeForFn(fnId));
-  });
+  // Show chain name
+  const nameEl = document.getElementById('chain-name');
+  nameEl.textContent = chain.name;
+  nameEl.style.display = 'inline';
 
-  // Dim all nodes, highlight chain nodes
-  Object.entries(nodeElements).forEach(([id, el]) => {
-    if (chainNodeIds.has(id)) {
-      el.classList.add('chain-node');
-      el.classList.remove('dimmed');
+  // Collect chain function IDs
+  const chainFns = new Set();
+  chain.edges.forEach(e => { chainFns.add(e.from); chainFns.add(e.to); });
+
+  // Collect chain edge keys
+  const chainEdgeKeys = new Set();
+  chain.edges.forEach(e => chainEdgeKeys.add(`${e.from}|${e.to}`));
+
+  // Dim/highlight pills
+  for (const [fnId, el] of Object.entries(pillEls)) {
+    el.classList.remove('highlighted', 'dimmed', 'pulse');
+    if (chainFns.has(fnId)) {
+      el.classList.add('highlighted');
     } else {
       el.classList.add('dimmed');
-      el.classList.remove('chain-node');
     }
+  }
+
+  // Dim/highlight lanes — check each lane's modules
+  document.querySelectorAll('.lane[data-lane]').forEach(laneEl => {
+    const laneId = laneEl.dataset.lane;
+    const lane = LANES.find(l => l.id === laneId);
+    if (!lane) return;
+    const hasActive = lane.modules.some(modId =>
+      [...chainFns].some(f => f.startsWith(modId + ':'))
+    );
+    laneEl.classList.toggle('dimmed', !hasActive);
   });
 
-  // Highlight fn-anchors
-  document.querySelectorAll('.fn-anchor').forEach(el => {
-    const fnId = el.dataset.fn;
-    if (chainFnSet.has(fnId)) {
-      el.classList.add('highlighted', 'chain-active');
-    }
-  });
-
-  // Highlight / dim connection paths
-  document.querySelectorAll('#connections path[data-conn-id]').forEach(pathEl => {
-    const connId = pathEl.dataset.connId;
-    if (chainConnSet.has(connId)) {
-      pathEl.classList.add('chain-path');
-      pathEl.classList.remove('dimmed');
-      pathEl.setAttribute('stroke', '#fbbf24');
-      pathEl.setAttribute('stroke-width', '2.5');
-      pathEl.setAttribute('opacity', '1');
-      pathEl.setAttribute('marker-end', 'url(#arrow-yellow)');
-      pathEl.removeAttribute('stroke-dasharray');
+  // Dim/highlight paths
+  for (const [key, path] of Object.entries(pathEls)) {
+    path.classList.remove('active', 'dimmed');
+    if (chainEdgeKeys.has(key)) {
+      path.classList.add('active');
     } else {
-      pathEl.classList.add('dimmed');
-      pathEl.classList.remove('chain-path');
-      pathEl.setAttribute('opacity', '0.05');
+      path.classList.add('dimmed');
     }
-  });
+  }
 
-  // Dim labels (rects and texts that follow paths)
-  const svg = document.getElementById('connections');
-  const allRects = svg.querySelectorAll('rect');
-  const allTexts = svg.querySelectorAll('text');
-  // We need to dim non-chain labels. Labels follow their paths in order.
-  // Since we rebuild SVG, labels are interleaved with paths.
-  // Simple approach: dim all rects/texts, then un-dim ones near chain paths.
-  allRects.forEach(r => r.setAttribute('opacity', '0.05'));
-  allTexts.forEach(t => t.setAttribute('opacity', '0.05'));
-
-  // Un-dim labels that belong to chain connections
-  // Re-traverse the SVG: for each chain path, the next rect+text siblings are its label
-  document.querySelectorAll('#connections path[data-conn-id]').forEach(pathEl => {
-    const connId = pathEl.dataset.connId;
-    if (chainConnSet.has(connId)) {
-      let next = pathEl.nextElementSibling;
-      if (next && next.tagName === 'rect') {
-        next.setAttribute('opacity', '0.85');
-        next.setAttribute('stroke', '#fbbf24');
-        let textEl = next.nextElementSibling;
-        if (textEl && textEl.tagName === 'text') {
-          textEl.setAttribute('opacity', '1');
-          textEl.setAttribute('fill', '#fbbf24');
-        }
-      }
-    }
-  });
-
-  // Update entry panel
-  document.querySelectorAll('.entry-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.chain === chainId);
+  // Entry chips
+  document.querySelectorAll('.entry-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.chain === chainId);
   });
 
   // Start animation
-  startChainAnimation(chainId);
+  animateChain(chainId);
 }
 
-function clearChain() {
+function resetChain() {
+  stopAnimation();
   activeChain = null;
-  stopChainAnimation();
 
-  // Remove all dimming/highlighting classes
-  Object.values(nodeElements).forEach(el => {
-    el.classList.remove('dimmed', 'chain-node');
-  });
+  document.getElementById('chain-name').style.display = 'none';
 
-  document.querySelectorAll('.fn-anchor').forEach(el => {
-    el.classList.remove('highlighted', 'chain-active');
-  });
+  for (const el of Object.values(pillEls)) {
+    el.classList.remove('highlighted', 'dimmed', 'pulse');
+  }
+  document.querySelectorAll('.lane[data-lane]').forEach(l => l.classList.remove('dimmed'));
 
-  // Re-render connections to restore original state
-  renderConnections();
-
-  // Update entry panel
-  document.querySelectorAll('.entry-item').forEach(item => {
-    item.classList.remove('active');
-  });
+  for (const path of Object.values(pathEls)) {
+    path.classList.remove('active', 'dimmed');
+  }
+  document.querySelectorAll('.entry-chip').forEach(c => c.classList.remove('active'));
 }
 
-// Escape key clears chain
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && activeChain) {
-    clearChain();
-  }
-});
+// ── Glow dot helpers ──
 
-// ============================================================
-// YELLOW LIGHT FLOW ANIMATION
-// ============================================================
-const TAIL_COUNT = 8;
-const TAIL_SPACING = 12;
-
-function startChainAnimation(chainId) {
-  stopChainAnimation();
-  const chain = CHAINS[chainId];
-  if (!chain || chain.connections.length === 0) return;
-
-  const pathEls = chain.connections.map(connId => {
-    return document.getElementById('path-' + connId);
-  }).filter(Boolean);
-
-  if (pathEls.length === 0) return;
-
-  // Pre-compute total length and cumulative lengths
-  const pathLengths = pathEls.map(p => p.getTotalLength());
-  const totalLength = pathLengths.reduce((a, b) => a + b, 0);
-  const cumulativeLengths = [];
-  let cumulative = 0;
-  pathLengths.forEach(l => {
-    cumulativeLengths.push(cumulative);
-    cumulative += l;
-  });
-
-  // Create glow dot and tail dots in the animation layer
-  const animLayer = document.getElementById('animation-layer');
-  if (!animLayer) return;
-
-  // Create tail dots (trailing, decreasing opacity)
+function createGlowDot(type, parentSvg) {
+  const TRAIL_COUNT = 4;
   const dots = [];
-  for (let i = TAIL_COUNT; i >= 0; i--) {
-    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    const opacity = i === 0 ? 1.0 : (1.0 - (i / (TAIL_COUNT + 1))) * 0.6;
-    const r = i === 0 ? 6 : Math.max(2, 6 - i * 0.5);
-    dot.setAttribute('r', String(r));
-    dot.setAttribute('fill', '#fbbf24');
-    dot.setAttribute('opacity', String(opacity));
-    if (i === 0) {
-      dot.setAttribute('filter', 'url(#glow-dot)');
-    }
-    animLayer.appendChild(dot);
-    dots.push({ el: dot, tailOffset: i * TAIL_SPACING });
+  for (let i = TRAIL_COUNT; i >= 0; i--) {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const isHead = i === 0;
+    c.setAttribute('r', isHead ? 3.5 : Math.max(1.5, 3.5 - i * 0.6));
+    c.setAttribute('cx', -20); c.setAttribute('cy', -20);
+    c.classList.add(type === 'request' ? 'glow-request' : 'glow-response');
+    c.style.opacity = isHead ? 1 : Math.max(0.15, 1 - i * 0.22);
+    parentSvg.appendChild(c);
+    dots.push(c);
   }
+  return dots; // [head, trail1, trail2, ...]
+}
 
-  let progress = 0;
-  const baseSpeed = 2.5; // pixels per frame at 1x
+function removeDots(dots) {
+  dots.forEach(d => d.remove());
+}
 
-  function getPointAtGlobalLength(len) {
-    // Wrap around
-    len = ((len % totalLength) + totalLength) % totalLength;
-    for (let i = 0; i < pathEls.length; i++) {
-      if (len <= cumulativeLengths[i] + pathLengths[i]) {
-        const localLen = len - cumulativeLengths[i];
-        return pathEls[i].getPointAtLength(localLen);
+function positionDots(dots, positions) {
+  dots.forEach((d, i) => {
+    const p = positions[Math.min(i, positions.length - 1)];
+    if (p) { d.setAttribute('cx', p.x); d.setAttribute('cy', p.y); }
+  });
+}
+
+// ── Animation ──
+
+function animateChain(chainId) {
+  const chain = CHAINS[chainId];
+  if (!chain) return;
+
+  const requestEdges = chain.edges.filter(e => e.type === 'request');
+  const responseEdges = chain.edges.filter(e => e.type === 'response');
+
+  const reqPaths = requestEdges.map(e => pathEls[`${e.from}|${e.to}`]).filter(Boolean);
+  const resPaths = responseEdges.map(e => pathEls[`${e.from}|${e.to}`]).filter(Boolean);
+
+  if (reqPaths.length === 0 && resPaths.length === 0) return;
+
+  const reqDots = reqPaths.length > 0 ? createGlowDot('request', svgEl) : [];
+  const resDots = resPaths.length > 0 ? createGlowDot('response', svgEl) : [];
+  glowDots = [...reqDots, ...resDots];
+
+  let reqIdx = 0, resIdx = 0;
+  let reqProgress = 0, resProgress = 0;
+  const TRAIL_SPACING = 8;
+
+  // Track positions for trail
+  const reqHistory = [];
+  const resHistory = [];
+
+  animating = true;
+
+  function frame() {
+    if (!animating) return;
+
+    // Request dots
+    if (reqPaths.length > 0) {
+      const path = reqPaths[reqIdx];
+      const len = path.getTotalLength();
+      reqProgress += 2.5 * animSpeed;
+      if (reqProgress >= len) {
+        reqProgress = 0;
+        // Pulse target pill
+        const edge = requestEdges.filter(e => pathEls[`${e.from}|${e.to}`])[reqIdx];
+        if (edge) {
+          const el = pillEls[edge.to];
+          if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+        }
+        reqIdx = (reqIdx + 1) % reqPaths.length;
       }
+      const pt = path.getPointAtLength(reqProgress);
+      reqHistory.unshift(pt);
+      if (reqHistory.length > reqDots.length * TRAIL_SPACING) reqHistory.length = reqDots.length * TRAIL_SPACING;
+      const positions = reqDots.map((_, i) => reqHistory[Math.min(i * TRAIL_SPACING, reqHistory.length - 1)]);
+      positionDots(reqDots, positions);
     }
-    return pathEls[pathEls.length - 1].getPointAtLength(pathLengths[pathLengths.length - 1]);
+
+    // Response dots
+    if (resPaths.length > 0) {
+      const path = resPaths[resIdx];
+      const len = path.getTotalLength();
+      resProgress += 2.5 * animSpeed;
+      if (resProgress >= len) {
+        resProgress = 0;
+        const edge = responseEdges.filter(e => pathEls[`${e.from}|${e.to}`])[resIdx];
+        if (edge) {
+          const el = pillEls[edge.to];
+          if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+        }
+        resIdx = (resIdx + 1) % resPaths.length;
+      }
+      const pt = path.getPointAtLength(resProgress);
+      resHistory.unshift(pt);
+      if (resHistory.length > resDots.length * TRAIL_SPACING) resHistory.length = resDots.length * TRAIL_SPACING;
+      const positions = resDots.map((_, i) => resHistory[Math.min(i * TRAIL_SPACING, resHistory.length - 1)]);
+      positionDots(resDots, positions);
+    }
+
+    animFrame = requestAnimationFrame(frame);
   }
+  animFrame = requestAnimationFrame(frame);
+}
 
-  function step() {
-    progress += baseSpeed * animSpeed;
-    if (progress > totalLength) {
-      progress -= totalLength;
-    }
+function stopAnimation() {
+  animating = false;
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  glowDots.forEach(d => d.remove());
+  glowDots = [];
+}
 
-    dots.forEach(({ el, tailOffset }) => {
-      const pt = getPointAtGlobalLength(progress - tailOffset);
-      el.setAttribute('cx', String(pt.x));
-      el.setAttribute('cy', String(pt.y));
+// ═══════════════════════════════════════════════════════════════════
+// CONTROLS
+// ═══════════════════════════════════════════════════════════════════
+
+function setSpeed(s) {
+  animSpeed = s;
+  document.querySelectorAll('.speed-btn').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.textContent) === s);
+  });
+}
+
+let legendOpen = false;
+function toggleLegend() {
+  legendOpen = !legendOpen;
+  document.getElementById('legend-overlay').classList.toggle('open', legendOpen);
+  document.getElementById('legend-btn').classList.toggle('active', legendOpen);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (openPopover) closePopover();
+    else if (legendOpen) toggleLegend();
+    else if (activeChain) resetChain();
+  }
+});
+
+// Click outside popover to close
+document.addEventListener('mousedown', e => {
+  if (openPopover && !openPopover.contains(e.target) && !e.target.closest('.fn-info-btn')) {
+    closePopover();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// RESIZE HANDLING
+// ═══════════════════════════════════════════════════════════════════
+
+let resizeTimer;
+function handleResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const wasChain = activeChain;
+    stopAnimation();
+    // Clear old pathEls
+    for (const k of Object.keys(pathEls)) delete pathEls[k];
+    buildAllPaths();
+    if (wasChain) selectChain(wasChain);
+  }, 200);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+
+function init() {
+  containerEl = document.getElementById('swim-container');
+  buildHeader();
+  buildLanes();
+  buildEntryBar();
+
+  // Wait for layout to settle, then draw paths
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      buildAllPaths();
     });
-
-    animationFrameId = requestAnimationFrame(step);
-  }
-
-  animationFrameId = requestAnimationFrame(step);
-}
-
-function stopChainAnimation() {
-  if (animationFrameId) {
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = null;
-  }
-  // Remove dots from animation layer
-  const animLayer = document.getElementById('animation-layer');
-  if (animLayer) {
-    animLayer.innerHTML = '';
-  }
-}
-
-// ============================================================
-// PAN & ZOOM
-// ============================================================
-let scale = 1;
-let panX = 0, panY = 0;
-let isDragging = false;
-let dragStartX, dragStartY, panStartX, panStartY;
-
-const viewport = document.getElementById('viewport');
-
-function applyTransform() {
-  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
-  document.getElementById('zoom-label').textContent = Math.round(scale * 100) + '%';
-  updateMinimap();
-}
-
-function zoomBy(delta, cx, cy) {
-  const oldScale = scale;
-  scale = Math.max(0.1, Math.min(3, scale + delta));
-  if (cx !== undefined && cy !== undefined) {
-    panX = cx - (cx - panX) * (scale / oldScale);
-    panY = cy - (cy - panY) * (scale / oldScale);
-  }
-  applyTransform();
-  // Re-render connections on zoom since fn positions change relative to canvas
-  scheduleConnectionRender();
-}
-
-let renderTimeout = null;
-function scheduleConnectionRender() {
-  if (renderTimeout) clearTimeout(renderTimeout);
-  renderTimeout = setTimeout(() => {
-    const wasActive = activeChain;
-    renderConnections();
-    if (wasActive) {
-      activateChain(wasActive);
-    }
-  }, 50);
-}
-
-function resetView() {
-  scale = 1; panX = 0; panY = 0;
-  applyTransform();
-  scheduleConnectionRender();
-}
-
-function fitToScreen() {
-  const vw = viewport.clientWidth;
-  const vh = viewport.clientHeight;
-  let maxX = 0, maxY = 0;
-  NODES.forEach(n => {
-    const el = nodeElements[n.id];
-    maxX = Math.max(maxX, n.x + n.w + 40);
-    maxY = Math.max(maxY, n.y + el.offsetHeight + 40);
-  });
-  const sx = vw / maxX;
-  const sy = vh / maxY;
-  scale = Math.min(sx, sy, 1) * 0.95;
-  panX = (vw - maxX * scale) / 2;
-  panY = (vh - maxY * scale) / 2;
-  applyTransform();
-  scheduleConnectionRender();
-}
-
-// Mouse wheel zoom
-viewport.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const rect = viewport.getBoundingClientRect();
-  const cx = e.clientX - rect.left;
-  const cy = e.clientY - rect.top;
-  const delta = e.deltaY > 0 ? -0.08 : 0.08;
-  zoomBy(delta, cx, cy);
-}, { passive: false });
-
-// Drag to pan
-viewport.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  // Don't start drag if clicking on fn-anchor
-  if (e.target.closest('.fn-anchor')) return;
-  isDragging = true;
-  dragStartX = e.clientX; dragStartY = e.clientY;
-  panStartX = panX; panStartY = panY;
-  viewport.classList.add('dragging');
-});
-window.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  panX = panStartX + (e.clientX - dragStartX);
-  panY = panStartY + (e.clientY - dragStartY);
-  applyTransform();
-});
-window.addEventListener('mouseup', () => {
-  isDragging = false;
-  viewport.classList.remove('dragging');
-});
-
-// Touch support
-let lastTouchDist = 0;
-let lastTouchMid = null;
-viewport.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 1) {
-    isDragging = true;
-    dragStartX = e.touches[0].clientX;
-    dragStartY = e.touches[0].clientY;
-    panStartX = panX; panStartY = panY;
-  } else if (e.touches.length === 2) {
-    isDragging = false;
-    const dx = e.touches[1].clientX - e.touches[0].clientX;
-    const dy = e.touches[1].clientY - e.touches[0].clientY;
-    lastTouchDist = Math.sqrt(dx*dx + dy*dy);
-    lastTouchMid = {
-      x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-      y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-    };
-  }
-}, { passive: true });
-viewport.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  if (e.touches.length === 1 && isDragging) {
-    panX = panStartX + (e.touches[0].clientX - dragStartX);
-    panY = panStartY + (e.touches[0].clientY - dragStartY);
-    applyTransform();
-  } else if (e.touches.length === 2) {
-    const dx = e.touches[1].clientX - e.touches[0].clientX;
-    const dy = e.touches[1].clientY - e.touches[0].clientY;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    const mid = {
-      x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-      y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-    };
-    if (lastTouchDist > 0) {
-      const rect = viewport.getBoundingClientRect();
-      const cx = mid.x - rect.left;
-      const cy = mid.y - rect.top;
-      const delta = (dist - lastTouchDist) * 0.005;
-      zoomBy(delta, cx, cy);
-    }
-    lastTouchDist = dist;
-    lastTouchMid = mid;
-  }
-}, { passive: false });
-viewport.addEventListener('touchend', () => {
-  isDragging = false;
-  lastTouchDist = 0;
-});
-
-// Keyboard shortcuts
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') return; // Handled by chain clear
-  const step = 60;
-  switch(e.key) {
-    case '+': case '=': zoomBy(0.15); break;
-    case '-': zoomBy(-0.15); break;
-    case '0': resetView(); break;
-    case 'ArrowUp': panY += step; applyTransform(); break;
-    case 'ArrowDown': panY -= step; applyTransform(); break;
-    case 'ArrowLeft': panX += step; applyTransform(); break;
-    case 'ArrowRight': panX -= step; applyTransform(); break;
-  }
-});
-
-// ============================================================
-// MINI-MAP
-// ============================================================
-function updateMinimap() {
-  const mmCanvas = document.getElementById('minimap-canvas');
-  const ctx = mmCanvas.getContext('2d');
-  const mmW = 200, mmH = 180;
-  mmCanvas.width = mmW; mmCanvas.height = mmH;
-
-  let maxX = 0, maxY = 0;
-  NODES.forEach(n => {
-    const el = nodeElements[n.id];
-    maxX = Math.max(maxX, n.x + n.w);
-    maxY = Math.max(maxY, n.y + (el ? el.offsetHeight : 200));
-  });
-  maxX += 80; maxY += 80;
-
-  const sx = mmW / maxX;
-  const sy = mmH / maxY;
-  const s = Math.min(sx, sy);
-
-  ctx.clearRect(0, 0, mmW, mmH);
-
-  NODES.forEach(n => {
-    const el = nodeElements[n.id];
-    const h = el ? el.offsetHeight : 200;
-    ctx.fillStyle = n.color + '40';
-    ctx.strokeStyle = n.color + '80';
-    ctx.lineWidth = 0.5;
-    ctx.fillRect(n.x * s, n.y * s, n.w * s, h * s);
-    ctx.strokeRect(n.x * s, n.y * s, n.w * s, h * s);
   });
 
-  const vw = viewport.clientWidth;
-  const vh = viewport.clientHeight;
-  const vpEl = document.getElementById('minimap-viewport');
-  const vx = (-panX / scale) * s;
-  const vy = (-panY / scale) * s;
-  const vww = (vw / scale) * s;
-  const vhh = (vh / scale) * s;
-  vpEl.style.left = vx + 'px';
-  vpEl.style.top = vy + 'px';
-  vpEl.style.width = Math.min(vww, mmW) + 'px';
-  vpEl.style.height = Math.min(vhh, mmH) + 'px';
+  window.addEventListener('resize', handleResize);
+
+  // Rebuild paths on scroll (for sticky header offset changes)
+  let scrollTimer;
+  document.getElementById('main').addEventListener('scroll', () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const wasChain = activeChain;
+      stopAnimation();
+      for (const k of Object.keys(pathEls)) delete pathEls[k];
+      buildAllPaths();
+      if (wasChain) selectChain(wasChain);
+    }, 150);
+  });
 }
 
-// Resize handler
-window.addEventListener('resize', () => {
-  updateMinimap();
-  scheduleConnectionRender();
-});
-
-// ============================================================
-// FN-ANCHOR CLICK HANDLER
-// ============================================================
-document.addEventListener('click', (e) => {
-  const anchor = e.target.closest('.fn-anchor');
-  if (!anchor) return;
-
-  e.stopPropagation();
-  const fnId = anchor.dataset.fn;
-
-  // Find which chains contain this function
-  for (const [chainId, chain] of Object.entries(CHAINS)) {
-    if (chain.fns.includes(fnId)) {
-      toggleChain(chainId);
-      return;
-    }
-  }
-});
+document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>

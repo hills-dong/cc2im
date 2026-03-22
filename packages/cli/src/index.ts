@@ -396,7 +396,7 @@ async function handleMessage(
 
   let bufferedText = "";
   const activities: string[] = []; // recent activity log
-  const flushInterval = msg.platform === "web" ? 100 : 3000;
+  const flushInterval = msg.platform === "web" ? 1000 : 3000;
   const startTime = Date.now();
   let lastAskQuestions: AskQuestion[] | null = null; // intercepted AskUserQuestion
 
@@ -435,7 +435,7 @@ async function handleMessage(
   console.log(`[stream] Timer started for thread ${threadId}, messageId ${currentMessageId}`);
   let lastDbSaveText = "";
   let flushCount = 0;
-  const dbSaveEveryN = msg.platform === "web" ? 30 : 1; // ~3s for web (100ms×30), every tick for others
+  const dbSaveEveryN = msg.platform === "web" ? 3 : 1; // ~3s for web (1000ms×3), every tick for others
   const flushTimer = setInterval(async () => {
     flushCount++;
     const display = buildDisplay();

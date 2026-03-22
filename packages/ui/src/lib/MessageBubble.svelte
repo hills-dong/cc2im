@@ -52,12 +52,13 @@
     {@const t = message.tokens}
     {@const effectiveInput = Math.round(t.input + t.cacheCreation * 1.25 + t.cacheRead * 0.1)}
     {@const inputTooltip = `${t.input} + ${t.cacheCreation} × 1.25 + ${t.cacheRead} × 0.1`}
+    {@const fmt = (n: number) => n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : n >= 1_000 ? (n / 1_000).toFixed(1) + 'K' : String(n)}
     <div class="flex gap-1 mt-1 px-1">
       <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4" title={inputTooltip}>
-        in: {effectiveInput}
+        in: {fmt(effectiveInput)}
       </Badge>
       <Badge variant="secondary" class="text-[10px] px-1.5 py-0 h-4">
-        out: {t.output}
+        out: {fmt(t.output)}
       </Badge>
     </div>
   {/if}

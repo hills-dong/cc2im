@@ -195,8 +195,8 @@
                   in: {fmt(effectiveInput(proj.total))} / out: {fmt(proj.total.output)}
                 </span>
               </Accordion.Trigger>
-              <Accordion.Content class="px-4 pb-3.5">
-                <Table.Root>
+              <Accordion.Content class="px-4 pb-3.5 [&_[data-slot=table-container]]:overflow-hidden">
+                <Table.Root class="table-fixed w-full">
                   <Table.Header>
                     <Table.Row>
                       <Table.Head class="w-28 text-xs uppercase tracking-wider">Platform</Table.Head>
@@ -217,7 +217,7 @@
                             {platformIcon(sess.platform)} {sess.platform ?? "unknown"}
                           </Badge>
                         </Table.Cell>
-                        <Table.Cell class="font-mono text-xs">
+                        <Table.Cell class="font-mono text-xs max-w-[180px] truncate" title={sess.name ?? sess.sessionId.slice(0, 12)}>
                           {sess.name ?? sess.sessionId.slice(0, 12)}
                         </Table.Cell>
                         <Table.Cell class="font-mono text-xs text-muted-foreground">

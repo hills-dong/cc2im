@@ -170,6 +170,7 @@ export class LarkAdapter implements PlatformAdapter {
         // Feishu API doesn't support receive_id_type=thread_id;
         // send to threads by replying to a message within the thread
         const replyTo = await this.ensureThreadMsg(threadId);
+        if (!replyTo) throw new Error(`Cannot resolve message_id for thread ${threadId}`);
         resp = await this.client.im.message.reply({
           path: { message_id: replyTo },
           data: { msg_type: msgType, content: msgContent, reply_in_thread: true },
@@ -252,7 +253,7 @@ export class LarkAdapter implements PlatformAdapter {
    * Ensure threadMsgMap has a message_id for the given thread.
    * On restart, the in-memory map is empty — fetch the latest message from the thread via API.
    */
-  private async ensureThreadMsg(threadId: string): Promise<string> {
+  private async ensureThreadMsg(threadId: string): Promise<string | null> {
     const cached = this.threadMsgMap.get(threadId);
     if (cached) return cached;
 
@@ -288,6 +289,7 @@ export class LarkAdapter implements PlatformAdapter {
   private async sendTypedMessage(threadId: string, msgType: string, content: string): Promise<void> {
     if (threadId.startsWith("omt_")) {
       const replyTo = await this.ensureThreadMsg(threadId);
+      if (!replyTo) throw new Error(`Cannot resolve message_id for thread ${threadId}`);
       const resp = await this.client.im.message.reply({
         path: { message_id: replyTo },
         data: { msg_type: msgType, content, reply_in_thread: true },

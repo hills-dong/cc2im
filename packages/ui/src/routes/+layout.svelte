@@ -46,6 +46,18 @@
     msgCacheCreation || currentSession?.baseCacheCreationTokens || 0
   );
 
+  // Context window size: total input tokens from the last bot message
+  let contextWindowSize = $derived(() => {
+    const msgs = currentSession?.messages ?? [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const t = msgs[i].tokens;
+      if (t && (t.input > 0 || t.cacheRead > 0)) {
+        return t.input + t.cacheRead + t.cacheCreation;
+      }
+    }
+    return 0;
+  });
+
   // Resizable sidebar
   const MIN_WIDTH = 180;
   const MAX_WIDTH = 400;
@@ -143,7 +155,7 @@
       <main class="flex-1 flex flex-col overflow-hidden">
         {@render children()}
       </main>
-      <StatusBar inputTokens={sessionInputTokens} outputTokens={sessionOutputTokens} cacheReadTokens={sessionCacheReadTokens} cacheCreationTokens={sessionCacheCreationTokens} />
+      <StatusBar inputTokens={sessionInputTokens} outputTokens={sessionOutputTokens} cacheReadTokens={sessionCacheReadTokens} cacheCreationTokens={sessionCacheCreationTokens} contextWindow={contextWindowSize()} />
     </div>
   </SidebarProvider>
 </div>
