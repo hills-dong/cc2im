@@ -206,7 +206,7 @@
                             <Circle class="!size-2 text-sidebar-foreground/30" />
                           {/if}
                         </span>
-                        <span class="truncate">{session.name || session.id}</span>
+                        <span class="min-w-0 truncate">{session.name || session.id}</span>
                       </Sidebar.MenuButton>
                       <Sidebar.MenuAction
                         showOnHover
