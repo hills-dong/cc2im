@@ -2,23 +2,20 @@
   "name": "@cc2im/server",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/api.js",
   "exports": {
-    ".": "./dist/server.js",
-    "./*": "./dist/*.js"
+    ".": "./src/api.ts",
+    "./*": "./src/*.ts"
   },
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
   },
   "dependencies": {
-    "@cc2im/core": "*",
-    "ws": "^8.18.0"
+    "@cc2im/core": "*"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

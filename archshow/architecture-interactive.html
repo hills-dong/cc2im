@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cc2im — Interactive Architecture</title>
+<style>
+:root {
+  --bg: #09090b;
+  --bg-card: #18181b;
+  --bg-card2: #1c1c1f;
+  --bg-code: #1e1e22;
+  --border: #27272a;
+  --border-hover: #3f3f46;
+  --border-active: #4cc9f066;
+  --text: #fafafa;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
+  --cyan: #4cc9f0;
+  --cyan-dim: #4cc9f022;
+  --cyan-glow: #4cc9f044;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --purple: #a78bfa;
+  --orange: #fb923c;
+  --pink: #f472b6;
+  --discord: #5865F2;
+  --lark: #2D60F5;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+.header {
+  border-bottom: 1px solid var(--border);
+  padding: 20px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-title { display: flex; align-items: baseline; gap: 10px; }
+.header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+.header h1 span { color: var(--cyan); }
+.header-sub { font-size: 12px; color: var(--text-dim); }
+.header-hint {
+  font-size: 11px; color: var(--text-dim);
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+}
+.header-hint kbd {
+  background: var(--border); border-radius: 3px;
+  padding: 1px 5px; font-family: var(--font-mono); font-size: 10px;
+}
+
+/* ── Canvas area ── */
+.canvas {
+  padding: 32px;
+  min-height: calc(100vh - 70px);
+  position: relative;
+}
+
+/* ── SVG overlay for lines ── */
+#lines-svg {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── L1 diagram layout ── */
+.diagram {
+  display: flex;
+  align-items: flex-start;
+  gap: 48px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding-bottom: 60px;
+}
+
+.diagram-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+.diagram-col-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+/* ── L1 Nodes ── */
+.node {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  min-width: 160px;
+  user-select: none;
+}
+.node:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.node.expanded {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px var(--cyan-glow), 0 4px 24px rgba(76,201,240,0.12);
+}
+.node-header {
+  display: flex; align-items: center; gap: 10px;
+}
+.node-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.node-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.node-sub {
+  font-size: 11px; color: var(--text-dim); margin-top: 4px;
+  font-family: var(--font-mono);
+}
+.node-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  background: var(--cyan-dim); color: var(--cyan);
+  font-family: var(--font-mono);
+  margin-left: auto; flex-shrink: 0;
+}
+.node-expand-icon {
+  position: absolute; top: 10px; right: 10px;
+  font-size: 10px; color: var(--text-dim);
+  transition: transform 0.2s;
+}
+.node.expanded .node-expand-icon { transform: rotate(90deg); color: var(--cyan); }
+
+/* ── L2 content panel ── */
+.node-panel {
+  display: none;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.node.expanded .node-panel { display: block; }
+
+/* ── L2 sub-module list ── */
+.module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 300px;
+  max-width: 480px;
+}
+
+.module-item {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+  overflow: hidden;
+}
+.module-item:hover { border-color: var(--border-hover); }
+.module-item.open { border-color: var(--border-active); }
+
+.module-header {
+  padding: 9px 14px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 500; color: var(--text);
+}
+.module-header-arrow {
+  font-size: 9px; color: var(--text-dim); margin-left: auto;
+  transition: transform 0.2s;
+}
+.module-item.open .module-header-arrow { transform: rotate(90deg); color: var(--cyan); }
+
+.module-tag {
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  font-family: var(--font-mono); font-weight: 500;
+}
+
+.module-body {
+  display: none;
+  padding: 0 14px 12px;
+}
+.module-item.open .module-body { display: block; }
+
+/* ── L3 sub-items ── */
+.l3-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.l3-header {
+  padding: 7px 12px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; color: var(--text-muted);
+  cursor: pointer;
+}
+.l3-header:hover { color: var(--text); }
+.l3-arrow { font-size: 8px; color: var(--text-dim); margin-left: auto; transition: transform 0.15s; }
+.l3-item.open .l3-arrow { transform: rotate(90deg); }
+.l3-body { display: none; padding: 0 12px 10px; }
+.l3-item.open .l3-body { display: block; }
+
+/* ── Arrow connectors ── */
+.arrow-line {
+  stroke: var(--border-hover);
+  stroke-width: 1.5;
+  fill: none;
+  stroke-dasharray: none;
+}
+.arrow-line.dashed { stroke-dasharray: 5,3; }
+.arrow-head { fill: var(--border-hover); }
+
+/* ── Typography elements ── */
+pre {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  margin: 8px 0;
+  color: var(--text-muted);
+  white-space: pre;
+}
+code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--bg-code);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--cyan);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+}
+th {
+  text-align: left; padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim); font-weight: 500;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+td code { background: var(--bg-code); padding: 1px 5px; border-radius: 3px; font-size: 11px; color: var(--cyan); }
+p { font-size: 12px; color: var(--text-muted); margin: 6px 0; }
+h4 { font-size: 12px; font-weight: 600; color: var(--text-muted); margin: 10px 0 6px; }
+ol, ul { padding-left: 18px; font-size: 12px; color: var(--text-muted); line-height: 2; }
+
+/* ── Syntax highlight ── */
+.kw { color: var(--purple); }
+.tp { color: var(--cyan); }
+.str { color: var(--green); }
+.cm { color: var(--text-dim); }
+.fn { color: var(--yellow); }
+.num { color: var(--orange); }
+.prop { color: var(--pink); }
+
+/* ── Tags ── */
+.tag {
+  display: inline-block; font-size: 10px;
+  padding: 1px 6px; border-radius: 3px; font-weight: 500;
+  font-family: var(--font-mono);
+}
+.tag-cyan { background: #4cc9f022; color: var(--cyan); }
+.tag-green { background: #34d39922; color: var(--green); }
+.tag-yellow { background: #fbbf2422; color: var(--yellow); }
+.tag-purple { background: #a78bfa22; color: var(--purple); }
+.tag-orange { background: #fb923c22; color: var(--orange); }
+.tag-pink { background: #f472b622; color: var(--pink); }
+.tag-red { background: #f8717122; color: var(--red); }
+.tag-discord { background: #5865F222; color: #818cf8; }
+.tag-lark { background: #2D60F522; color: #60a5fa; }
+
+/* ── Flow steps ── */
+.flow-steps { display: flex; flex-direction: column; gap: 1px; }
+.flow-step { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.flow-step:last-child { border-bottom: none; }
+.flow-num {
+  width: 20px; height: 20px; border-radius: 4px;
+  background: var(--cyan-dim); color: var(--cyan);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; flex-shrink: 0;
+  margin-top: 1px;
+}
+.flow-content strong { font-size: 12px; color: var(--text); }
+.flow-content p { margin: 2px 0 0; }
+
+/* ── Mini state diagram ── */
+.state-diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  margin: 8px 0;
+}
+.state-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.state-box {
+  padding: 3px 10px; border-radius: 4px;
+  border: 1px solid var(--border-hover);
+  color: var(--text-muted); background: var(--bg-code);
+  white-space: nowrap;
+}
+.state-box.start { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+.state-box.done { border-color: var(--green); color: var(--green); background: #34d39915; }
+.state-box.error { border-color: var(--red); color: var(--red); background: #f8717115; }
+.state-arrow { color: var(--text-dim); font-size: 10px; }
+.state-label { font-size: 10px; color: var(--text-dim); font-family: var(--font-sans); }
+
+/* ── File tree ── */
+.file-tree { font-family: var(--font-mono); font-size: 11.5px; line-height: 2; }
+.file-tree .dir { color: var(--cyan); }
+.file-tree .file { color: var(--text-muted); }
+.file-tree .desc { color: var(--text-dim); font-family: var(--font-sans); font-size: 11px; }
+
+/* ── Info cards inside panels ── */
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 12px;
+  margin: 8px 0;
+}
+.info-card-title {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+/* ── Section divider ── */
+.divider { height: 1px; background: var(--border); margin: 10px 0; }
+
+/* ── Scrollable content ── */
+.scroll-box { max-height: 320px; overflow-y: auto; }
+.scroll-box::-webkit-scrollbar { width: 4px; }
+.scroll-box::-webkit-scrollbar-track { background: transparent; }
+.scroll-box::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 2px; }
+
+/* ── Diagram connector dots ── */
+.connector {
+  position: absolute;
+  background: var(--border-hover);
+  border-radius: 50%;
+}
+
+/* ── Arrow labels ── */
+.arrow-label {
+  font-size: 10px;
+  fill: var(--text-dim);
+  font-family: var(--font-sans);
+}
+
+/* ── Collapse all button ── */
+.collapse-btn {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-muted); font-size: 11px;
+  padding: 7px 14px; border-radius: 6px; cursor: pointer;
+  transition: all 0.15s; z-index: 100;
+  font-family: var(--font-sans);
+}
+.collapse-btn:hover { border-color: var(--border-hover); color: var(--text); }
+
+/* ── Tooltip ── */
+.tooltip {
+  display: none;
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  pointer-events: none;
+  z-index: 200;
+  max-width: 220px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">
+    <h1><span>cc2im</span> Architecture</h1>
+    <span class="header-sub">Claude Code → IM Bridge</span>
+  </div>
+  <div class="header-hint">
+    <span>Click any node to expand</span>
+    <kbd>L1</kbd><span>→</span><kbd>L2</kbd><span>→</span><kbd>L3</kbd>
+    <span style="margin-left:4px">Progressive disclosure</span>
+  </div>
+</div>
+
+<svg id="lines-svg" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3f3f46"/>
+    </marker>
+    <marker id="arrowhead-cyan" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#4cc9f066"/>
+    </marker>
+    <marker id="arrowhead-dashed" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3f3f46"/>
+    </marker>
+  </defs>
+</svg>
+
+<div class="canvas">
+<div class="diagram" id="diagram">
+
+  <!-- ── Column 1: Clients ── -->
+  <div class="diagram-col" id="col-clients">
+    <div class="diagram-col-label">Clients</div>
+
+    <!-- Discord node -->
+    <div class="node" id="node-discord" data-color="#5865F2" onclick="toggleNode('node-discord')">
+      <div class="node-expand-icon">▶</div>
+      <div class="node-header">
+        <span class="node-dot" style="background:#5865F2"></span>
+        <span class="node-name">Discord</span>
+        <span class="node-badge">v14 SDK</span>
+      </div>
+      <div class="node-sub">Bot Gateway / WS</div>
+      <div class="node-panel">
+        <div class="module-list">
+
+          <div class="module-item" onclick="toggleModule(event,'mod-discord-adapter')">
+            <div class="module-header">
+              <span class="module-tag tag-discord">adapter</span>
+              DiscordAdapter
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-discord-adapter">
+              <table>
+                <tr><td>SDK</td><td><code>discord.js</code> v14</td></tr>
+                <tr><td>Connection</td><td>Bot Gateway (WebSocket)</td></tr>
+                <tr><td>Channels</td><td><code>cc2im-{project}</code> per project</td></tr>
+                <tr><td>Threads</td><td>Discord thread per conversation</td></tr>
+                <tr><td>Max length</td><td>2,000 chars</td></tr>
+                <tr><td>Extras</td><td>Slash commands, reactions, file upload</td></tr>
+                <tr><td>File</td><td><code>cli/src/adapters/discord.ts</code></td></tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-discord-slash')">
+            <div class="module-header">
+              <span class="module-tag tag-purple">commands</span>
+              Slash Commands
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-discord-slash">
+              <table>
+                <tr><td><code>/im-list-projects</code></td><td>List all configured projects</td></tr>
+                <tr><td><code>/im-add-project</code></td><td>Add project, create channel</td></tr>
+                <tr><td><code>/im-remove-project</code></td><td>Remove project from config</td></tr>
+                <tr><td><code>/im-reload-config</code></td><td>Hot-reload config file</td></tr>
+                <tr><td><code>/im-done</code></td><td>Mark thread as completed ✅</td></tr>
+                <tr><td><code>/im-reopen</code></td><td>Reopen completed thread 🔄</td></tr>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /node-discord -->
+
+    <!-- Lark node -->
+    <div class="node" id="node-lark" data-color="#2D60F5" onclick="toggleNode('node-lark')">
+      <div class="node-expand-icon">▶</div>
+      <div class="node-header">
+        <span class="node-dot" style="background:#2D60F5"></span>
+        <span class="node-name">Lark</span>
+        <span class="node-badge">WS SDK</span>
+      </div>
+      <div class="node-sub">Group chats / threads</div>
+      <div class="node-panel">
+        <div class="module-list">
+
+          <div class="module-item" onclick="toggleModule(event,'mod-lark-adapter')">
+            <div class="module-header">
+              <span class="module-tag tag-lark">adapter</span>
+              LarkAdapter
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-lark-adapter">
+              <table>
+                <tr><td>SDK</td><td><code>@larksuiteoapi/node-sdk</code></td></tr>
+                <tr><td>Connection</td><td>Lark WebSocket client</td></tr>
+                <tr><td>Channels</td><td>Group chats per project</td></tr>
+                <tr><td>Threads</td><td>Lark message threads (reply chains)</td></tr>
+                <tr><td>Max length</td><td>30,000 chars</td></tr>
+                <tr><td>Extras</td><td>Owner init (<code>/im-init</code>), member mgmt</td></tr>
+                <tr><td>File</td><td><code>cli/src/adapters/lark.ts</code></td></tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-lark-init')">
+            <div class="module-header">
+              <span class="module-tag tag-yellow">special</span>
+              /im-init Command
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-lark-init">
+              <p>Lark-only command: saves owner <code>openId</code> to config, adds owner to all project group chats. Required on first setup so bot knows who the owner is.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /node-lark -->
+
+    <!-- Web UI node -->
+    <div class="node" id="node-webui" data-color="#4cc9f0" onclick="toggleNode('node-webui')">
+      <div class="node-expand-icon">▶</div>
+      <div class="node-header">
+        <span class="node-dot" style="background:var(--cyan)"></span>
+        <span class="node-name">Web UI</span>
+        <span class="node-badge">SvelteKit 5</span>
+      </div>
+      <div class="node-sub">HTTP + WebSocket</div>
+      <div class="node-panel">
+        <div class="module-list">
+
+          <div class="module-item" onclick="toggleModule(event,'mod-ui-routes')">
+            <div class="module-header">
+              <span class="module-tag tag-orange">routes</span>
+              SvelteKit Routes
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-ui-routes">
+              <table>
+                <tr><td><code>/</code></td><td>Redirect → <code>/chat</code></td></tr>
+                <tr><td><code>/chat</code></td><td>Project list</td></tr>
+                <tr><td><code>/chat/[project]</code></td><td>Session list for project</td></tr>
+                <tr><td><code>/chat/[project]/[session]</code></td><td>Chat conversation view</td></tr>
+                <tr><td><code>/stats</code></td><td>Token usage dashboard</td></tr>
+                <tr><td><code>/config</code></td><td>Configuration editor</td></tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-ui-connection')">
+            <div class="module-header">
+              <span class="module-tag tag-cyan">store</span>
+              connection.ts
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-ui-connection">
+              <p>WS lifecycle, auto-reconnect, message queue, event dispatch.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-reconnect')">
+                <div class="l3-header">
+                  Reconnect Logic (exponential backoff)
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-reconnect">
+<pre><span class="cm">// Exponential backoff: 0ms → 1s → 2s → 4s → 30s (cap)</span>
+<span class="kw">const</span> <span class="prop">delays</span> = [<span class="num">0</span>, <span class="num">1000</span>, <span class="num">2000</span>, <span class="num">4000</span>];
+<span class="kw">const</span> <span class="prop">delay</span> = delays[reconnectAttempt] ?? <span class="num">30000</span>;
+
+<span class="cm">// On open: reset attempt counter, send sync.state,</span>
+<span class="cm">//          flush pending queue</span>
+<span class="cm">// On close: schedule reconnect</span>
+<span class="cm">// Messages sent while disconnected → queued</span>
+<span class="cm">//   in pendingQueue[]</span></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-ui-chat')">
+            <div class="module-header">
+              <span class="module-tag tag-cyan">store</span>
+              chat.ts
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-ui-chat">
+              <p>Session state (<code>Map&lt;sessKey, Session&gt;</code>), message arrays, thread key mapping, send/receive handlers.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-chat-state')">
+                <div class="l3-header">
+                  Session Lifecycle State Machine
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-chat-state">
+                  <div class="state-diagram">
+                    <div class="state-row">
+                      <div class="state-box start">[*]</div>
+                      <div class="state-arrow">──▶</div>
+                      <div class="state-box">NewSession</div>
+                      <div class="state-label">sendMessage("proj","hello")</div>
+                    </div>
+                    <div class="state-row">
+                      <div class="state-box">NewSession</div>
+                      <div class="state-arrow">──▶</div>
+                      <div class="state-box">Streaming</div>
+                      <div class="state-label">chat.message received</div>
+                    </div>
+                    <div class="state-row">
+                      <div class="state-box">Streaming</div>
+                      <div class="state-arrow">──▶</div>
+                      <div class="state-box">Streaming</div>
+                      <div class="state-label">chat.update (replace content)</div>
+                    </div>
+                    <div class="state-row">
+                      <div class="state-box">Streaming</div>
+                      <div class="state-arrow">──▶</div>
+                      <div class="state-box done">Complete</div>
+                      <div class="state-label">chat.done</div>
+                    </div>
+                    <div class="state-row">
+                      <div class="state-box">Streaming</div>
+                      <div class="state-arrow">──▶</div>
+                      <div class="state-box error">Error</div>
+                      <div class="state-label">chat.error</div>
+                    </div>
+                    <div class="state-row">
+                      <div class="state-box done">Complete</div>
+                      <div class="state-arrow">──▶</div>
+                      <div class="state-box">Streaming</div>
+                      <div class="state-label">user sends another message</div>
+                    </div>
+                  </div>
+                  <p style="margin-top:8px"><strong>Note:</strong> On first <code>chat.message</code>, sessKey is rekeyed from <code>new-{project}</code> to <code>threadKey</code>. <code>threadKeyMap[threadKey] = sessKey</code> for routing subsequent updates.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-ui-components')">
+            <div class="module-header">
+              <span class="module-tag tag-pink">ui</span>
+              Components
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-ui-components">
+              <p>shadcn-svelte New York style components. Key UI modules:</p>
+              <table>
+                <tr><td><code>AppSidebar.svelte</code></td><td>Project + session navigation sidebar</td></tr>
+                <tr><td><code>+layout.svelte</code></td><td>Global layout, theme, status bar</td></tr>
+                <tr><td><code>[session]/+page.svelte</code></td><td>Chat conversation view, message streaming</td></tr>
+                <tr><td><code>stats/+page.svelte</code></td><td>Token usage dashboard charts</td></tr>
+                <tr><td><code>config/+page.svelte</code></td><td>Live config editor</td></tr>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /node-webui -->
+
+  </div><!-- /col-clients -->
+
+
+  <!-- ── Column 2: cc2im System ── -->
+  <div class="diagram-col" id="col-core">
+    <div class="diagram-col-label">cc2im (Node.js)</div>
+
+    <div class="node" id="node-cc2im" data-color="#4cc9f0" onclick="toggleNode('node-cc2im')">
+      <div class="node-expand-icon">▶</div>
+      <div class="node-header">
+        <span class="node-dot" style="background:var(--cyan)"></span>
+        <span class="node-name">cc2im</span>
+        <span class="node-badge">core</span>
+      </div>
+      <div class="node-sub">Monorepo bridge system</div>
+      <div class="node-panel">
+        <div class="module-list" style="max-width:560px">
+
+          <!-- WebAdapter -->
+          <div class="module-item" onclick="toggleModule(event,'mod-webadapter')">
+            <div class="module-header">
+              <span class="module-tag tag-cyan">adapter</span>
+              WebAdapter
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-webadapter">
+              <table>
+                <tr><td>Server</td><td><code>http.createServer</code> + <code>ws</code></td></tr>
+                <tr><td>Connection</td><td>WebSocket (<code>/ws</code>) + REST API (<code>/api/*</code>)</td></tr>
+                <tr><td>Channels</td><td><code>wb_{projectName}</code></td></tr>
+                <tr><td>Threads</td><td><code>wb_{project}:{timestamp}</code></td></tr>
+                <tr><td>Max length</td><td>100,000 chars</td></tr>
+                <tr><td>Extras</td><td>Subscribe, stream recovery, abort, static files</td></tr>
+              </table>
+              <div class="l3-item" onclick="toggleL3(event,'l3-webadapter-internals')">
+                <div class="l3-header">
+                  Internal Maps &amp; Methods
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-webadapter-internals">
+                  <h4>Internal State</h4>
+                  <table>
+                    <tr><td><code>subscriptions</code></td><td><code>Map&lt;threadId, Set&lt;WS&gt;&gt;</code> — per-thread subscriber sockets</td></tr>
+                    <tr><td><code>streamBuffers</code></td><td><code>Map&lt;threadId, string&gt;</code> — buffered content for recovery</td></tr>
+                    <tr><td><code>messageThreadMap</code></td><td><code>Map&lt;msgId, threadId&gt;</code> — reverse lookup for edit</td></tr>
+                  </table>
+                  <h4>Extra Methods (beyond PlatformAdapter)</h4>
+                  <table>
+                    <tr><td><code>onAbort(handler)</code></td><td>Register abort → <code>sessionManager.abort(threadKey)</code></td></tr>
+                    <tr><td><code>sendDone(threadId, tokens)</code></td><td>Broadcast <code>chat.done</code> + clear stream buffer</td></tr>
+                    <tr><td><code>sendSessionUpdate(project, threadId, name)</code></td><td>Broadcast <code>session.update</code> to all clients</td></tr>
+                    <tr><td><code>sendError(threadId, error)</code></td><td>Broadcast <code>chat.error</code> + clear buffer</td></tr>
+                    <tr><td><code>sendToThread(threadId, msg)</code></td><td>Subscribers only, fallback to broadcast</td></tr>
+                  </table>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-ws-protocol')">
+                <div class="l3-header">
+                  WebSocket Protocol (Client ↔ Server)
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-ws-protocol">
+                  <h4>Client → Server</h4>
+                  <table>
+                    <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
+                    <tr><td><code>chat.send</code></td><td><code>project, message, threadKey?, sessionId?, model?</code></td><td>Send message. Auto-subscribes sender.</td></tr>
+                    <tr><td><code>chat.subscribe</code></td><td><code>threadKey</code></td><td>Subscribe. If stream active → <code>chat.recover</code>.</td></tr>
+                    <tr><td><code>chat.abort</code></td><td><code>threadKey</code></td><td>Abort active Claude process (SIGTERM).</td></tr>
+                    <tr><td><code>sync.state</code></td><td><em>none</em></td><td>Request state. Sent auto on connect.</td></tr>
+                  </table>
+                  <h4>Server → Client</h4>
+                  <table>
+                    <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
+                    <tr><td><code>chat.message</code></td><td><code>threadId, messageId, content</code></td><td>New message ("⏳ Thinking..." or extra chunks)</td></tr>
+                    <tr><td><code>chat.update</code></td><td><code>threadId, messageId, content</code></td><td>Streaming update — replaces content</td></tr>
+                    <tr><td><code>chat.done</code></td><td><code>threadId, tokens: TokenStats</code></td><td>Stream complete, clears buffer</td></tr>
+                    <tr><td><code>chat.error</code></td><td><code>threadId, error: {code, message}</code></td><td>Error during processing</td></tr>
+                    <tr><td><code>chat.file</code></td><td><code>threadId, filename, content (base64)</code></td><td>File attachment</td></tr>
+                    <tr><td><code>chat.recover</code></td><td><code>threadId, content</code></td><td>Full buffered content on subscribe-while-streaming</td></tr>
+                    <tr><td><code>session.update</code></td><td><code>project, threadKey, name</code></td><td>Broadcast to all — sidebar refresh</td></tr>
+                    <tr><td><code>sync.state</code></td><td><code>activeSessions[], bufferedOutput</code></td><td>State response</td></tr>
+                    <tr><td><code>error</code></td><td><code>error: {code, message}</code></td><td>Protocol error (INVALID_JSON, UNKNOWN_TYPE)</td></tr>
+                  </table>
+                  <h4>Stream Recovery Flow</h4>
+                  <div class="state-diagram">
+                    <div class="state-row"><div class="state-box">Client connects</div><div class="state-arrow">──▶</div><div class="state-box">sync.state</div></div>
+                    <div class="state-row"><div class="state-box">chat.subscribe</div><div class="state-arrow">──▶</div><div class="state-box">check streamBuffer</div></div>
+                    <div class="state-row"><div class="state-box">buffer exists</div><div class="state-arrow">──▶</div><div class="state-box done">chat.recover</div><div class="state-label">full buffered content</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Router -->
+          <div class="module-item" onclick="toggleModule(event,'mod-router')">
+            <div class="module-header">
+              <span class="module-tag tag-green">core</span>
+              Router
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-router">
+              <p>Maps <code>{platform}:{channelId}</code> → project. Registered at startup via <code>setupProject()</code>.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-router-keys')">
+                <div class="l3-header">
+                  Channel ID Format per Platform
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-router-keys">
+                  <table>
+                    <tr><th>Platform</th><th>channelId Format</th><th>Router Key Example</th></tr>
+                    <tr><td><span class="tag tag-discord">Discord</span></td><td>Discord channel ID (snowflake)</td><td><code>discord:1234567890</code></td></tr>
+                    <tr><td><span class="tag tag-lark">Lark</span></td><td>Lark chat ID</td><td><code>lark:oc_xxxxx</code></td></tr>
+                    <tr><td><span class="tag tag-cyan">Web</span></td><td><code>wb_{projectName}</code></td><td><code>web:wb_myproject</code></td></tr>
+                  </table>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-mgmt-cmds')">
+                <div class="l3-header">
+                  Management Commands (/im-*)
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-mgmt-cmds">
+                  <table>
+                    <tr><th>Command</th><th>Action</th></tr>
+                    <tr><td><code>/im-list-projects</code></td><td>List all configured projects</td></tr>
+                    <tr><td><code>/im-add-project &lt;name&gt; &lt;dir&gt;</code></td><td>Add project, create channel, save config</td></tr>
+                    <tr><td><code>/im-remove-project &lt;name&gt;</code></td><td>Remove project from config</td></tr>
+                    <tr><td><code>/im-reload-config</code></td><td>Hot-reload config file</td></tr>
+                    <tr><td><code>/im-done</code></td><td>Mark thread as completed ✅</td></tr>
+                    <tr><td><code>/im-reopen</code></td><td>Reopen completed thread 🔄</td></tr>
+                    <tr><td><code>/im-init</code></td><td>Lark only: save owner ID, add to project groups</td></tr>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SessionManager -->
+          <div class="module-item" onclick="toggleModule(event,'mod-session')">
+            <div class="module-header">
+              <span class="module-tag tag-yellow">core</span>
+              SessionManager
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-session">
+              <p>Spawns Claude Code child processes. Manages per-thread FIFO queues and global concurrency limits.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-session-states')">
+                <div class="l3-header">
+                  Session State Machine
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-session-states">
+                  <div class="state-diagram">
+                    <div class="state-row"><div class="state-box start">[*]</div><div class="state-arrow">──▶</div><div class="state-box">Queued</div><div class="state-label">invoke() called</div></div>
+                    <div class="state-row"><div class="state-box">Queued</div><div class="state-arrow">──▶</div><div class="state-box">Queued</div><div class="state-label">thread busy (await queue)</div></div>
+                    <div class="state-row"><div class="state-box">Queued</div><div class="state-arrow">──▶</div><div class="state-box">WaitingSlot</div><div class="state-label">thread not busy</div></div>
+                    <div class="state-row"><div class="state-box">WaitingSlot</div><div class="state-arrow">──▶</div><div class="state-box">WaitingSlot</div><div class="state-label">all slots full (poll 500ms)</div></div>
+                    <div class="state-row"><div class="state-box">WaitingSlot</div><div class="state-arrow">──▶</div><div class="state-box">Running</div><div class="state-label">concurrency slot available</div></div>
+                    <div class="state-row"><div class="state-box">Running</div><div class="state-arrow">──▶</div><div class="state-box done">Done</div><div class="state-label">process exits code 0</div></div>
+                    <div class="state-row"><div class="state-box">Running</div><div class="state-arrow">──▶</div><div class="state-box error">Error</div><div class="state-label">process exits non-0 / no output</div></div>
+                    <div class="state-row"><div class="state-box">Running</div><div class="state-arrow">──▶</div><div class="state-box error">Aborted</div><div class="state-label">abort(sessionId) → SIGTERM</div></div>
+                  </div>
+                  <p style="margin-top:8px"><strong>Active map:</strong> <code>Map&lt;threadKey, ChildProcess&gt;</code>. Max concurrent = <code>formatterConfig.maxConcurrentProcesses</code> (default 5).</p>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-concurrency')">
+                <div class="l3-header">
+                  Concurrency &amp; Queue Logic
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-concurrency">
+                  <ol>
+                    <li>If queue exists for <code>threadKey</code> → push, await</li>
+                    <li>When dequeued → wait for <code>active.size &lt; maxConcurrentProcesses</code></li>
+                    <li>Call <code>onStart()</code> → spawn process</li>
+                    <li>On process close → shift next from queue, or delete queue</li>
+                  </ol>
+                  <p>Messages to the same thread are sequential; different threads run in parallel up to the limit.</p>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-spawn')">
+                <div class="l3-header">
+                  Process Spawn Details
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-spawn">
+<pre><span class="fn">spawn</span>(<span class="prop">claudeConfig.command</span>, [
+  <span class="str">"--print"</span>,
+  <span class="str">"--output-format"</span>, <span class="str">"stream-json"</span>,
+  <span class="str">"--model"</span>, model,
+  <span class="str">"--resume"</span>, sessionId,  <span class="cm">// omitted for new sessions</span>
+  <span class="str">"-p"</span>, fullMessage,
+], {
+  <span class="prop">cwd</span>: projectDir,
+  <span class="prop">env</span>: { ...process.env, <span class="prop">CLAUDECODE</span>: <span class="kw">undefined</span> },
+  <span class="prop">stdio</span>: [<span class="str">"ignore"</span>, <span class="str">"pipe"</span>, <span class="str">"pipe"</span>],
+});</pre>
+                  <p>Stdout read via <code>readline</code> (NDJSON). Stderr accumulated for error reporting.</p>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-session-result')">
+                <div class="l3-header">
+                  SessionResult Interface
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-session-result">
+<pre><span class="kw">interface</span> <span class="tp">SessionResult</span> {
+  <span class="prop">sessionId</span>: <span class="tp">string</span>;          <span class="cm">// for --resume</span>
+  <span class="prop">text</span>: <span class="tp">string</span>;               <span class="cm">// final response</span>
+  <span class="prop">success</span>: <span class="tp">boolean</span>;
+  <span class="prop">inputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">outputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheReadTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheCreationTokens</span>: <span class="tp">number</span>;
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Formatter -->
+          <div class="module-item" onclick="toggleModule(event,'mod-formatter')">
+            <div class="module-header">
+              <span class="module-tag tag-orange">core</span>
+              Formatter
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-formatter">
+              <p>Splits long text, extracts <code>[react:emoji]</code> patterns, detects image attachments. File: <code>core/src/formatter.ts</code>.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-formatter-pipeline')">
+                <div class="l3-header">
+                  Formatter Pipeline
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-formatter-pipeline">
+                  <div class="state-diagram">
+                    <div class="state-row"><div class="state-box start">Input</div><div class="state-arrow">──▶</div><div class="state-box">extractReactions()</div><div class="state-label">strips [react:emoji]</div></div>
+                    <div class="state-row"><div class="state-box">cleanText</div><div class="state-arrow">──▶</div><div class="state-box">formatOutput()</div><div class="state-label">check length vs maxLen</div></div>
+                    <div class="state-row"><div class="state-box">≤ maxLen</div><div class="state-arrow">──▶</div><div class="state-box done">[text]</div><div class="state-label">single message</div></div>
+                    <div class="state-row"><div class="state-box">≤ maxLen×5</div><div class="state-arrow">──▶</div><div class="state-box">splitText()</div><div class="state-label">[1/N]…[N/N]</div></div>
+                    <div class="state-row"><div class="state-box">&gt; maxLen×5</div><div class="state-arrow">──▶</div><div class="state-box error">generateSummary()</div><div class="state-label">+ full-output.md attachment</div></div>
+                    <div class="state-row"><div class="state-box start">Input</div><div class="state-arrow">──▶</div><div class="state-box">extractImages()</div><div class="state-label">detect image paths</div></div>
+                    <div class="state-row"><div class="state-box">image paths</div><div class="state-arrow">──▶</div><div class="state-box done">Attachment[]</div><div class="state-label">for upload</div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-split-text')">
+                <div class="l3-header">
+                  splitText Algorithm
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-split-text">
+                  <p>Splits at natural boundaries: newlines first, then spaces, then hard break. Each chunk gets <code>[i/N]</code> prefix. Reserves 12 chars for the prefix to stay within platform limit.</p>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-reaction-pattern')">
+                <div class="l3-header">
+                  Reaction Pattern &amp; Image Extraction
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-reaction-pattern">
+                  <p><strong>Reaction:</strong> Strips <code>[react:emoji]</code> patterns from end of text. Multiple reactions supported. Returns cleaned text + <code>string[]</code> of emoji.</p>
+                  <p><strong>Images:</strong> Detects referenced image file paths in response text. Loads them as <code>Buffer</code> and wraps into <code>Attachment[]</code> for <code>uploadFile()</code>.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Store -->
+          <div class="module-item" onclick="toggleModule(event,'mod-store')">
+            <div class="module-header">
+              <span class="module-tag tag-purple">core</span>
+              Store (SQLite)
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-store">
+              <p>SQLite + WAL mode. File: <code>core/src/store.ts</code>. DB path from <code>CC2IM_DB</code> env or default.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-schema')">
+                <div class="l3-header">
+                  Full Schema (3 tables)
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-schema">
+                  <h4>threads</h4>
+                  <table>
+                    <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+                    <tr><td><code>thread_id</code></td><td>TEXT PK</td><td>Platform thread identifier</td></tr>
+                    <tr><td><code>platform</code></td><td>TEXT PK</td><td>Composite PK with thread_id</td></tr>
+                    <tr><td><code>channel_id</code></td><td>TEXT</td><td></td></tr>
+                    <tr><td><code>session_id</code></td><td>TEXT</td><td>Claude Code session ID for --resume</td></tr>
+                    <tr><td><code>project_name</code></td><td>TEXT</td><td></td></tr>
+                    <tr><td><code>status</code></td><td>TEXT</td><td>active | done | archived</td></tr>
+                    <tr><td><code>name</code></td><td>TEXT</td><td>Display name of thread</td></tr>
+                    <tr><td><code>created_at</code></td><td>DATETIME</td><td></td></tr>
+                  </table>
+                  <h4>messages</h4>
+                  <table>
+                    <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+                    <tr><td><code>message_id</code></td><td>TEXT PK</td><td></td></tr>
+                    <tr><td><code>platform</code></td><td>TEXT PK</td><td>Composite PK</td></tr>
+                    <tr><td><code>thread_id</code></td><td>TEXT FK</td><td>→ threads</td></tr>
+                    <tr><td><code>is_bot</code></td><td>BOOLEAN</td><td></td></tr>
+                    <tr><td><code>content_summary</code></td><td>TEXT</td><td></td></tr>
+                    <tr><td><code>input_tokens</code></td><td>INTEGER</td><td></td></tr>
+                    <tr><td><code>output_tokens</code></td><td>INTEGER</td><td></td></tr>
+                    <tr><td><code>cache_read_tokens</code></td><td>INTEGER</td><td></td></tr>
+                    <tr><td><code>cache_creation_tokens</code></td><td>INTEGER</td><td></td></tr>
+                    <tr><td><code>model</code></td><td>TEXT</td><td></td></tr>
+                    <tr><td><code>created_at</code></td><td>DATETIME</td><td></td></tr>
+                  </table>
+                  <h4>pending_restarts</h4>
+                  <table>
+                    <tr><th>Column</th><th>Type</th></tr>
+                    <tr><td><code>thread_id</code></td><td>TEXT PK</td></tr>
+                    <tr><td><code>platform</code></td><td>TEXT PK</td></tr>
+                    <tr><td><code>created_at</code></td><td>DATETIME</td></tr>
+                  </table>
+                  <p><strong>Indexes:</strong> <code>idx_messages_thread(thread_id, platform)</code>, <code>idx_threads_project(project_name, status)</code></p>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-store-api')">
+                <div class="l3-header">
+                  Store API Methods
+                  <span class="l3-arrow">▶</span>
+                </div>
+                <div class="l3-body" id="l3-store-api">
+                  <table>
+                    <tr><th>Method</th><th>SQL</th></tr>
+                    <tr><td><code>upsertThread()</code></td><td><code>INSERT ... ON CONFLICT DO UPDATE SET session_id, name</code></td></tr>
+                    <tr><td><code>getThread()</code></td><td><code>SELECT * WHERE thread_id=? AND platform=?</code></td></tr>
+                    <tr><td><code>updateThreadStatus()</code></td><td><code>UPDATE SET status=?</code></td></tr>
+                    <tr><td><code>archiveThread()</code></td><td><code>UPDATE SET status='archived'</code></td></tr>
+                    <tr><td><code>deleteThread()</code></td><td><code>DELETE messages + DELETE thread</code></td></tr>
+                    <tr><td><code>saveMessage()</code></td><td><code>INSERT OR REPLACE</code> with token counts</td></tr>
+                    <tr><td><code>getSessionTokens()</code></td><td><code>SUM(tokens) WHERE thread_id=? AND is_bot=1</code></td></tr>
+                    <tr><td><code>getProjectTokens()</code></td><td><code>SUM(tokens) JOIN threads WHERE project_name=?</code></td></tr>
+                    <tr><td><code>getDailyTokens()</code></td><td><code>GROUP BY DATE(created_at), model</code></td></tr>
+                    <tr><td><code>getOverviewTokens()</code></td><td><code>GROUP BY thread_id, platform</code> + optional <code>since</code></td></tr>
+                    <tr><td><code>markPendingRestart()</code></td><td><code>INSERT OR IGNORE</code> into pending_restarts</td></tr>
+                    <tr><td><code>getPendingRestarts()</code></td><td><code>JOIN threads</code> on pending_restarts</td></tr>
+                    <tr><td><code>listSessions()</code></td><td>List threads, optional project filter, excludes archived</td></tr>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Types -->
+          <div class="module-item" onclick="toggleModule(event,'mod-types')">
+            <div class="module-header">
+              <span class="module-tag tag-pink">types</span>
+              Core Types
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-types">
+              <p>File: <code>core/src/types.ts</code> — all shared type definitions.</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-types-platform')">
+                <div class="l3-header">Platform &amp; Messages</div>
+                <div class="l3-body" id="l3-types-platform">
+<pre><span class="kw">type</span> <span class="tp">Platform</span> = <span class="str">"lark"</span> | <span class="str">"discord"</span> | <span class="str">"web"</span>;
+
+<span class="kw">interface</span> <span class="tp">IncomingMessage</span> {
+  <span class="prop">platform</span>: <span class="tp">Platform</span>;
+  <span class="prop">channelId</span>: <span class="tp">string</span>;      <span class="cm">// Discord: channel, Lark: chat, Web: wb_proj</span>
+  <span class="prop">threadId</span>: <span class="tp">string | null</span>; <span class="cm">// null = new thread needed</span>
+  <span class="prop">messageId</span>: <span class="tp">string</span>;
+  <span class="prop">userId</span>: <span class="tp">string</span>;
+  <span class="prop">userName</span>: <span class="tp">string</span>;
+  <span class="prop">content</span>: <span class="tp">string</span>;
+  <span class="prop">attachments</span>: <span class="tp">Attachment[]</span>;
+  <span class="prop">replyToMessageId</span>?: <span class="tp">string</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">Attachment</span> {
+  <span class="prop">filename</span>: <span class="tp">string</span>;
+  <span class="prop">content</span>: <span class="tp">Buffer</span>;
+  <span class="prop">mimeType</span>?: <span class="tp">string</span>;
+}</pre>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-types-adapter')">
+                <div class="l3-header">PlatformAdapter Interface</div>
+                <div class="l3-body" id="l3-types-adapter">
+<pre><span class="kw">interface</span> <span class="tp">PlatformAdapter</span> {
+  <span class="kw">readonly</span> <span class="prop">platform</span>: <span class="tp">Platform</span>;
+
+  <span class="cm">// Lifecycle</span>
+  <span class="fn">start</span>(): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">stop</span>(): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">setupProject</span>(<span class="prop">project</span>): <span class="tp">Promise&lt;ChannelInfo&gt;</span>;
+
+  <span class="cm">// Thread management</span>
+  <span class="fn">createThread</span>(<span class="prop">channelId</span>, <span class="prop">messageId</span>): <span class="tp">Promise&lt;string&gt;</span>;
+  <span class="fn">getThreadName</span>(<span class="prop">threadId</span>): <span class="tp">Promise&lt;string&gt;</span>;
+  <span class="fn">renameThread</span>(<span class="prop">threadId</span>, <span class="prop">name</span>): <span class="tp">Promise&lt;void&gt;</span>;
+
+  <span class="cm">// Messaging</span>
+  <span class="fn">sendMessage</span>(<span class="prop">channelId</span>, <span class="prop">threadId</span>, <span class="prop">content</span>): <span class="tp">Promise&lt;string&gt;</span>;
+  <span class="fn">editMessage</span>(<span class="prop">channelId</span>, <span class="prop">messageId</span>, <span class="prop">content</span>): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">uploadFile</span>(<span class="prop">channelId</span>, <span class="prop">threadId</span>, <span class="prop">filename</span>, <span class="prop">content</span>): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">addReaction</span>(<span class="prop">channelId</span>, <span class="prop">messageId</span>, <span class="prop">emoji</span>): <span class="tp">Promise&lt;void&gt;</span>;
+
+  <span class="cm">// Event handlers</span>
+  <span class="fn">onMessage</span>(<span class="prop">handler</span>): <span class="tp">void</span>;
+  <span class="fn">onReaction</span>(<span class="prop">handler</span>): <span class="tp">void</span>;
+}</pre>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-types-config')">
+                <div class="l3-header">Config Types</div>
+                <div class="l3-body" id="l3-types-config">
+<pre><span class="kw">interface</span> <span class="tp">AppConfig</span> {
+  <span class="prop">lark</span>: { <span class="prop">appId</span>: <span class="tp">string</span>; <span class="prop">appSecret</span>: <span class="tp">string</span>; <span class="prop">ownerOpenId</span>?: <span class="tp">string</span> };
+  <span class="prop">discord</span>: { <span class="prop">token</span>: <span class="tp">string</span> };
+  <span class="prop">projects</span>: <span class="tp">ProjectConfig[]</span>;
+  <span class="prop">claude</span>: <span class="tp">ClaudeConfig</span>;
+  <span class="prop">formatter</span>: <span class="tp">FormatterConfig</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">ProjectConfig</span> {
+  <span class="prop">name</span>: <span class="tp">string</span>;
+  <span class="prop">directory</span>: <span class="tp">string</span>;
+  <span class="prop">model</span>?: <span class="tp">string</span>;
+  <span class="prop">platforms</span>: <span class="tp">Partial&lt;Record&lt;Platform, boolean&gt;&gt;</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">ClaudeConfig</span> {
+  <span class="prop">command</span>: <span class="tp">string</span>;         <span class="cm">// default: "claude"</span>
+  <span class="prop">defaultArgs</span>: <span class="tp">string[]</span>;    <span class="cm">// [--print, --output-format stream-json, ...]</span>
+  <span class="prop">bufferInterval</span>: <span class="tp">number</span>;   <span class="cm">// ms between stream flushes</span>
+  <span class="prop">timeout</span>: <span class="tp">number</span>;          <span class="cm">// ms max process duration</span>
+}
+
+<span class="kw">interface</span> <span class="tp">FormatterConfig</span> {
+  <span class="prop">maxMessageLength</span>: <span class="tp">Record&lt;Platform, number&gt;</span>;
+  <span class="cm">// discord:2000, lark:30000, web:100000</span>
+  <span class="prop">maxConcurrentProcesses</span>: <span class="tp">number</span>;  <span class="cm">// default: 5</span>
+}</pre>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-types-stream')">
+                <div class="l3-header">Stream Event Types (NDJSON stdout)</div>
+                <div class="l3-body" id="l3-types-stream">
+<pre><span class="kw">interface</span> <span class="tp">StreamInitEvent</span> {
+  <span class="prop">type</span>: <span class="str">"system"</span>;
+  <span class="prop">subtype</span>: <span class="str">"init"</span>;
+  <span class="prop">session_id</span>: <span class="tp">string</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">StreamAssistantEvent</span> {
+  <span class="prop">type</span>: <span class="str">"assistant"</span>;
+  <span class="prop">message</span>: {
+    <span class="prop">content</span>: <span class="tp">Array&lt;
+      | { type: "text"; text: string }
+      | { type: "tool_use"; name: string; input: any }
+    &gt;</span>;
+  };
+}
+
+<span class="kw">interface</span> <span class="tp">StreamResultEvent</span> {
+  <span class="prop">type</span>: <span class="str">"result"</span>;
+  <span class="prop">subtype</span>: <span class="str">"success"</span> | <span class="str">"error"</span>;
+  <span class="prop">result</span>: <span class="tp">string</span>;
+  <span class="prop">session_id</span>: <span class="tp">string</span>;
+  <span class="prop">usage</span>?: {
+    <span class="prop">input_tokens</span>: <span class="tp">number</span>;
+    <span class="prop">output_tokens</span>: <span class="tp">number</span>;
+    <span class="prop">cache_read_input_tokens</span>?: <span class="tp">number</span>;
+    <span class="prop">cache_creation_input_tokens</span>?: <span class="tp">number</span>;
+  };
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Packages -->
+          <div class="module-item" onclick="toggleModule(event,'mod-packages')">
+            <div class="module-header">
+              <span class="module-tag tag-green">monorepo</span>
+              Package Structure
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-packages">
+              <table>
+                <tr><td><code>@cc2im/core</code></td><td>Types, SessionManager, Router, Store, Formatter — zero platform deps</td></tr>
+                <tr><td><code>cc2im (cli)</code></td><td>Entry point, platform adapters, service management</td></tr>
+                <tr><td><code>@cc2im/server</code></td><td>REST API handler + contracts</td></tr>
+                <tr><td><code>@cc2im/ui</code></td><td>SvelteKit 5 + shadcn-svelte frontend</td></tr>
+                <tr><td><code>desktop</code></td><td>Tauri 2 native shell wrapping the Web UI</td></tr>
+              </table>
+              <p><strong>Dep graph:</strong> server → core; cli → core, server; ui → cli (HTTP/WS); desktop → ui (embed)</p>
+              <div class="l3-item" onclick="toggleL3(event,'l3-file-tree')">
+                <div class="l3-header">Full File Tree</div>
+                <div class="l3-body" id="l3-file-tree">
+                  <div class="scroll-box">
+<pre class="file-tree"><span class="dir">packages/</span>
+├── <span class="dir">core/src/</span>
+│   ├── <span class="file">types.ts</span>       <span class="desc">Platform, IncomingMessage, OutgoingMessage, AppConfig, StreamEvent, PlatformAdapter</span>
+│   ├── <span class="file">session.ts</span>     <span class="desc">SessionManager — spawns Claude Code, manages concurrency queues</span>
+│   ├── <span class="file">router.ts</span>      <span class="desc">Router — maps channelId+platform → project, parses /im-* commands</span>
+│   ├── <span class="file">store.ts</span>       <span class="desc">Store — SQLite wrapper: threads, messages, token stats, pending restarts</span>
+│   ├── <span class="file">formatter.ts</span>   <span class="desc">Formatter — splits long text, extracts reactions/images</span>
+│   ├── <span class="file">config.ts</span>      <span class="desc">loadConfig/saveConfig — YAML + env var overrides</span>
+│   └── <span class="file">index.ts</span>       <span class="desc">Barrel exports</span>
+├── <span class="dir">cli/src/</span>
+│   ├── <span class="file">index.ts</span>       <span class="desc">main() — init adapters, handleMessage, handleReaction, graceful shutdown</span>
+│   ├── <span class="file">cli.ts</span>         <span class="desc">CLI commands: install, uninstall, start, stop, restart, status, logs, run</span>
+│   ├── <span class="file">service.ts</span>     <span class="desc">systemd/launchd service file generation</span>
+│   └── <span class="dir">adapters/</span>
+│       ├── <span class="file">discord.ts</span> <span class="desc">DiscordAdapter — discord.js client, slash commands, threads</span>
+│       ├── <span class="file">lark.ts</span>    <span class="desc">LarkAdapter — Lark SDK, group chats, WebSocket event dispatch</span>
+│       └── <span class="file">web.ts</span>     <span class="desc">WebAdapter — HTTP server + WebSocket + static files + PlatformAdapter</span>
+├── <span class="dir">server/src/</span>
+│   ├── <span class="file">api.ts</span>         <span class="desc">handleApi — REST routes: config, projects, sessions, stats, claude/test</span>
+│   └── <span class="dir">contracts/</span>
+│       └── <span class="file">api.ts</span>     <span class="desc">API type definitions (ApiError, ProjectBody)</span>
+├── <span class="dir">ui/src/</span>
+│   ├── <span class="dir">routes/</span>
+│   │   ├── <span class="file">+layout.svelte</span>
+│   │   ├── <span class="file">chat/[project]/+page.svelte</span>
+│   │   ├── <span class="file">chat/[project]/[session]/+page.svelte</span>
+│   │   ├── <span class="file">stats/+page.svelte</span>
+│   │   └── <span class="file">config/+page.svelte</span>
+│   └── <span class="dir">lib/</span>
+│       ├── <span class="dir">stores/</span>
+│       │   ├── <span class="file">chat.ts</span>
+│       │   └── <span class="file">connection.ts</span>
+│       └── <span class="dir">components/</span>   <span class="desc">shadcn-svelte UI components</span>
+└── <span class="dir">desktop/</span>           <span class="desc">Tauri 2 config + Rust shell</span></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Message Flow -->
+          <div class="module-item" onclick="toggleModule(event,'mod-msgflow')">
+            <div class="module-header">
+              <span class="module-tag tag-cyan">flow</span>
+              Message Flow (8 steps)
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-msgflow">
+              <div class="flow-steps">
+                <div class="flow-step">
+                  <div class="flow-num">1</div>
+                  <div class="flow-content">
+                    <strong>Receive</strong>
+                    <p>Adapter receives platform event → constructs <code>IncomingMessage</code> with normalized fields (platform, channelId, threadId, content, attachments)</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">2</div>
+                  <div class="flow-content">
+                    <strong>Route</strong>
+                    <p>Router maps <code>{platform}:{channelId}</code> → project config. Checks for <code>/im-*</code> management commands. Returns <code>null</code> if channel not registered.</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">3</div>
+                  <div class="flow-content">
+                    <strong>Thread</strong>
+                    <p>If <code>threadId</code> is null, create new thread. Discord: channel thread. Web: <code>wb_project:timestamp</code>. Async generates title via Claude (haiku model).</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">4</div>
+                  <div class="flow-content">
+                    <strong>Persist</strong>
+                    <p>Save user message to DB. Create/update thread record. Send initial "⏳ Thinking..." indicator.</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">5</div>
+                  <div class="flow-content">
+                    <strong>Invoke</strong>
+                    <p>SessionManager queues if thread busy, waits for concurrency slot (max 5), spawns <code>claude --print --output-format stream-json --resume {sessionId} -p {message}</code>.</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">6</div>
+                  <div class="flow-content">
+                    <strong>Stream</strong>
+                    <p>Reads stdout NDJSON. Parses <code>StreamInitEvent</code> (session_id), <code>StreamAssistantEvent</code> (text + tool_use), <code>StreamResultEvent</code> (final + tokens). Calls <code>onEvent</code>.</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">7</div>
+                  <div class="flow-content">
+                    <strong>Live Update</strong>
+                    <p>Accumulates <code>bufferedText</code> + activity log. <code>setInterval</code> (100ms web, 3s Discord) calls <code>editMessage</code> with current text + activity footer.</p>
+                  </div>
+                </div>
+                <div class="flow-step">
+                  <div class="flow-num">8</div>
+                  <div class="flow-content">
+                    <strong>Format &amp; Deliver</strong>
+                    <p>Extract <code>[react:emoji]</code>, split text by limit, detect image paths, upload files, add reactions. Final message gets "✅ done [elapsed]" footer.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- REST API -->
+          <div class="module-item" onclick="toggleModule(event,'mod-api')">
+            <div class="module-header">
+              <span class="module-tag tag-purple">server</span>
+              REST API
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-api">
+              <p>File: <code>server/src/api.ts</code> — <code>handleApi()</code> function.</p>
+              <table>
+                <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+                <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/config</code></td><td>Config with secrets masked as <code>***</code></td></tr>
+                <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/config</code></td><td>Update config (allowlisted keys, preserves masked secrets)</td></tr>
+                <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/projects</code></td><td>List all projects</td></tr>
+                <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/projects</code></td><td>Add project (requires name + directory)</td></tr>
+                <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/projects/:name</code></td><td>Update project settings</td></tr>
+                <tr><td><span class="tag tag-red">DELETE</span></td><td><code>/api/projects/:name</code></td><td>Remove project (idempotent, 204)</td></tr>
+                <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sessions</code></td><td>List sessions, optional <code>?project=</code> filter</td></tr>
+                <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sessions/:id/messages</code></td><td>Messages for a session</td></tr>
+                <tr><td><span class="tag tag-orange">PATCH</span></td><td><code>/api/sessions/:id/archive</code></td><td>Archive session (204)</td></tr>
+                <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/stats/tokens</code></td><td>Token stats by <code>?project=</code> or <code>?session=</code></td></tr>
+                <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/stats/overview</code></td><td>Per-project per-session totals, <code>?window=24h|7d|all</code></td></tr>
+                <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/claude/test</code></td><td>Verify Claude CLI works</td></tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- CLI & Service -->
+          <div class="module-item" onclick="toggleModule(event,'mod-cli')">
+            <div class="module-header">
+              <span class="module-tag tag-green">cli</span>
+              CLI &amp; Service Management
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-cli">
+              <table>
+                <tr><th>Command</th><th>Action</th></tr>
+                <tr><td><code>cc2im install</code></td><td>Generate systemd unit / launchd plist, enable + start</td></tr>
+                <tr><td><code>cc2im uninstall</code></td><td>Stop, disable, remove unit/plist</td></tr>
+                <tr><td><code>cc2im start|stop|restart</code></td><td>systemctl / launchctl control</td></tr>
+                <tr><td><code>cc2im status</code></td><td>Show service status</td></tr>
+                <tr><td><code>cc2im logs</code></td><td>journalctl / log file tail</td></tr>
+                <tr><td><code>cc2im run</code></td><td>Run in foreground (dev mode)</td></tr>
+                <tr><td><code>cc2im web</code></td><td>Start with web UI on specified port</td></tr>
+              </table>
+              <div class="l3-item" onclick="toggleL3(event,'l3-startup')">
+                <div class="l3-header">Startup Sequence (main())</div>
+                <div class="l3-body" id="l3-startup">
+                  <ol>
+                    <li>loadConfig(path)</li>
+                    <li>new Store(dbPath)</li>
+                    <li>SessionManager + Formatter + Router</li>
+                    <li>Init adapters (Discord if token, Lark if appId, Web if port)</li>
+                    <li>For each adapter: start() → setupProject() → registerChannel() → onMessage() → onReaction()</li>
+                    <li>cc2im ready</li>
+                    <li>Recover pending restarts from DB</li>
+                    <li>Register SIGINT/SIGTERM handlers</li>
+                  </ol>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-shutdown')">
+                <div class="l3-header">Graceful Shutdown</div>
+                <div class="l3-body" id="l3-shutdown">
+                  <ol>
+                    <li>Mark active threads as pending restart in DB</li>
+                    <li><code>sessionManager.abortAll()</code> — SIGTERM all Claude processes</li>
+                    <li><code>adapter.stop()</code> for each adapter</li>
+                    <li><code>store.close()</code></li>
+                    <li><code>process.exit(0)</code></li>
+                  </ol>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-ask-user')">
+                <div class="l3-header">AskUserQuestion Interception</div>
+                <div class="l3-body" id="l3-ask-user">
+                  <ol>
+                    <li>Stream callback detects <code>tool_use</code> block with <code>name === "AskUserQuestion"</code></li>
+                    <li>Questions stored in <code>lastAskQuestions</code></li>
+                    <li>After invoke completes, format questions and send to user</li>
+                    <li>Add entry to <code>pendingAsks</code> Map with a Promise resolve</li>
+                    <li>Next message from user in same thread resolves the promise</li>
+                    <li>Parse answer (letter combos like "AB" or full text)</li>
+                    <li>Re-invoke Claude with <code>--resume</code> + user's answer</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Config -->
+          <div class="module-item" onclick="toggleModule(event,'mod-config')">
+            <div class="module-header">
+              <span class="module-tag tag-yellow">config</span>
+              Configuration (YAML + Env)
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-config">
+              <div class="l3-item" onclick="toggleL3(event,'l3-config-yaml')">
+                <div class="l3-header">config.yaml Structure</div>
+                <div class="l3-body" id="l3-config-yaml">
+<pre><span class="prop">discord</span>:
+  <span class="prop">token</span>: <span class="str">"bot-token"</span>
+<span class="prop">lark</span>:
+  <span class="prop">appId</span>: <span class="str">"cli_xxx"</span>
+  <span class="prop">appSecret</span>: <span class="str">"secret"</span>
+  <span class="prop">ownerOpenId</span>: <span class="str">"ou_xxx"</span>
+<span class="prop">projects</span>:
+  - <span class="prop">name</span>: <span class="str">"my-proj"</span>
+    <span class="prop">directory</span>: <span class="str">"/path/to/proj"</span>
+    <span class="prop">model</span>: <span class="str">"sonnet"</span>
+    <span class="prop">platforms</span>:
+      <span class="prop">discord</span>: <span class="kw">true</span>
+      <span class="prop">lark</span>: <span class="kw">false</span>
+      <span class="prop">web</span>: <span class="kw">true</span>
+<span class="prop">claude</span>:
+  <span class="prop">command</span>: <span class="str">"claude"</span>
+  <span class="prop">bufferInterval</span>: <span class="num">500</span>
+  <span class="prop">timeout</span>: <span class="num">300000</span>
+<span class="prop">formatter</span>:
+  <span class="prop">maxMessageLength</span>:
+    <span class="prop">discord</span>: <span class="num">2000</span>
+    <span class="prop">lark</span>: <span class="num">30000</span>
+    <span class="prop">web</span>: <span class="num">100000</span>
+  <span class="prop">maxConcurrentProcesses</span>: <span class="num">5</span></pre>
+                </div>
+              </div>
+              <div class="l3-item" onclick="toggleL3(event,'l3-config-env')">
+                <div class="l3-header">Env Overrides &amp; Search Order</div>
+                <div class="l3-body" id="l3-config-env">
+                  <table>
+                    <tr><th>Env Var</th><th>Overrides</th></tr>
+                    <tr><td><code>CC2IM_CONFIG</code></td><td>Config file path</td></tr>
+                    <tr><td><code>CC2IM_DB</code></td><td>Database file path</td></tr>
+                    <tr><td><code>DISCORD_TOKEN</code></td><td><code>discord.token</code></td></tr>
+                    <tr><td><code>LARK_APP_ID</code></td><td><code>lark.appId</code></td></tr>
+                    <tr><td><code>LARK_APP_SECRET</code></td><td><code>lark.appSecret</code></td></tr>
+                    <tr><td><code>LARK_OWNER_OPEN_ID</code></td><td><code>lark.ownerOpenId</code></td></tr>
+                  </table>
+                  <p><strong>Search order:</strong> (1) CC2IM_CONFIG env (2) --config flag (3) ~/.config/cc2im/config.yaml (4) ./config.yaml</p>
+                  <p><strong>Secret handling on save:</strong> If secret came from env var, saved as empty string to avoid leaking into YAML.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /node-cc2im -->
+
+  </div><!-- /col-core -->
+
+
+  <!-- ── Column 3: Outputs ── -->
+  <div class="diagram-col" id="col-outputs">
+    <div class="diagram-col-label">Processes &amp; Storage</div>
+
+    <!-- Claude Code node -->
+    <div class="node" id="node-claude" data-color="#D97706" onclick="toggleNode('node-claude')">
+      <div class="node-expand-icon">▶</div>
+      <div class="node-header">
+        <span class="node-dot" style="background:#D97706"></span>
+        <span class="node-name">Claude Code</span>
+        <span class="node-badge">child process</span>
+      </div>
+      <div class="node-sub">--resume --output-format stream-json</div>
+      <div class="node-panel">
+        <div class="module-list">
+
+          <div class="module-item" onclick="toggleModule(event,'mod-claude-spawn')">
+            <div class="module-header">
+              <span class="module-tag tag-yellow">spawn</span>
+              Spawn Command
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-claude-spawn">
+<pre><span class="fn">spawn</span>(<span class="str">"claude"</span>, [
+  <span class="str">"--print"</span>,
+  <span class="str">"--output-format"</span>, <span class="str">"stream-json"</span>,
+  <span class="str">"--model"</span>, model,
+  <span class="str">"--resume"</span>, sessionId,
+  <span class="str">"-p"</span>, message,
+], {
+  <span class="prop">cwd</span>: projectDir,
+  <span class="prop">stdio</span>: [<span class="str">"ignore"</span>, <span class="str">"pipe"</span>, <span class="str">"pipe"</span>],
+})</pre>
+              <p>New session: omit <code>--resume</code>. Session ID captured from <code>StreamInitEvent</code> and stored in DB for future <code>--resume</code>.</p>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-claude-events')">
+            <div class="module-header">
+              <span class="module-tag tag-orange">stream</span>
+              Stream Event Types
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-claude-events">
+              <table>
+                <tr><th>Event</th><th>When</th><th>Key Fields</th></tr>
+                <tr><td><code>StreamInitEvent</code></td><td>Process start</td><td><code>type:"system", subtype:"init", session_id</code></td></tr>
+                <tr><td><code>StreamAssistantEvent</code></td><td>Each content block</td><td><code>type:"assistant", message.content[]</code> (text | tool_use)</td></tr>
+                <tr><td><code>StreamResultEvent</code></td><td>Process end</td><td><code>type:"result", subtype, result, session_id, usage</code></td></tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-claude-session-result')">
+            <div class="module-header">
+              <span class="module-tag tag-green">output</span>
+              SessionResult
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-claude-session-result">
+<pre><span class="kw">interface</span> <span class="tp">SessionResult</span> {
+  <span class="prop">sessionId</span>: <span class="tp">string</span>;
+  <span class="prop">text</span>: <span class="tp">string</span>;
+  <span class="prop">success</span>: <span class="tp">boolean</span>;
+  <span class="prop">inputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">outputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheReadTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheCreationTokens</span>: <span class="tp">number</span>;
+}</pre>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /node-claude -->
+
+    <!-- SQLite node -->
+    <div class="node" id="node-sqlite" data-color="#a1a1aa" onclick="toggleNode('node-sqlite')">
+      <div class="node-expand-icon">▶</div>
+      <div class="node-header">
+        <span class="node-dot" style="background:#a1a1aa"></span>
+        <span class="node-name">SQLite</span>
+        <span class="node-badge">WAL mode</span>
+      </div>
+      <div class="node-sub">threads · messages · pending_restarts</div>
+      <div class="node-panel">
+        <div class="module-list">
+
+          <div class="module-item" onclick="toggleModule(event,'mod-db-schema')">
+            <div class="module-header">
+              <span class="module-tag tag-purple">schema</span>
+              Tables &amp; Indexes
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-db-schema">
+              <p>Three tables: <code>threads</code> (composite PK: thread_id + platform), <code>messages</code> (with token counts), <code>pending_restarts</code> (for graceful restart recovery).</p>
+              <p><strong>Indexes:</strong> <code>idx_messages_thread(thread_id, platform)</code>, <code>idx_threads_project(project_name, status)</code></p>
+            </div>
+          </div>
+
+          <div class="module-item" onclick="toggleModule(event,'mod-db-queries')">
+            <div class="module-header">
+              <span class="module-tag tag-cyan">queries</span>
+              Key Query Patterns
+              <span class="module-header-arrow">▶</span>
+            </div>
+            <div class="module-body" id="mod-db-queries">
+              <table>
+                <tr><td>Thread upsert</td><td><code>INSERT ... ON CONFLICT DO UPDATE SET session_id, name</code></td></tr>
+                <tr><td>Token sum</td><td><code>SUM(input_tokens + output_tokens) GROUP BY thread_id</code></td></tr>
+                <tr><td>Daily stats</td><td><code>GROUP BY DATE(created_at), model</code></td></tr>
+                <tr><td>Overview</td><td><code>GROUP BY thread_id, platform</code> + optional <code>since</code> filter</td></tr>
+                <tr><td>Session list</td><td><code>WHERE status != 'archived'</code>, optional project filter</td></tr>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /node-sqlite -->
+
+  </div><!-- /col-outputs -->
+
+</div><!-- /diagram -->
+</div><!-- /canvas -->
+
+<!-- Arrow flow indicators between columns -->
+<div id="arrow-container"></div>
+
+<button class="collapse-btn" onclick="collapseAll()">Collapse all</button>
+
+<script>
+// ── State ──
+const expanded = new Set();
+
+function toggleNode(id) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  if (expanded.has(id)) {
+    expanded.delete(id);
+    node.classList.remove('expanded');
+  } else {
+    expanded.add(id);
+    node.classList.add('expanded');
+  }
+  updateLines();
+}
+
+function toggleModule(event, id) {
+  event.stopPropagation();
+  const body = document.getElementById(id);
+  const item = body ? body.closest('.module-item') : null;
+  if (!body || !item) return;
+  const isOpen = item.classList.contains('open');
+  item.classList.toggle('open', !isOpen);
+  updateLines();
+}
+
+function toggleL3(event, id) {
+  event.stopPropagation();
+  const body = document.getElementById(id);
+  const item = body ? body.closest('.l3-item') : null;
+  if (!body || !item) return;
+  item.classList.toggle('open');
+  // auto-open trigger (no arrow if no button clicked)
+  updateLines();
+}
+
+function collapseAll() {
+  document.querySelectorAll('.node.expanded').forEach(n => n.classList.remove('expanded'));
+  document.querySelectorAll('.module-item.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.l3-item.open').forEach(l => l.classList.remove('open'));
+  expanded.clear();
+  updateLines();
+}
+
+// ── SVG Lines ──
+// Connection definitions: [fromId, toId, label, dashed]
+const connections = [
+  ['node-discord', 'node-cc2im', 'Bot API', false],
+  ['node-lark',    'node-cc2im', 'WS SDK', false],
+  ['node-webui',   'node-cc2im', 'WS + HTTP', false],
+  ['node-cc2im',   'node-claude', 'spawn --resume', false],
+  ['node-claude',  'node-cc2im', 'stream-json', false],
+  ['node-cc2im',   'node-sqlite', 'tokens, sessions', true],
+];
+
+function getCenter(el) {
+  const r = el.getBoundingClientRect();
+  return {
+    x: r.left + r.width / 2,
+    y: r.top + r.height / 2,
+    left: r.left,
+    right: r.right,
+    top: r.top,
+    bottom: r.bottom,
+    w: r.width,
+    h: r.height,
+  };
+}
+
+function cubicPath(x1, y1, x2, y2) {
+  const dx = Math.abs(x2 - x1) * 0.5;
+  return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+}
+
+function updateLines() {
+  const svg = document.getElementById('lines-svg');
+  // Remove existing lines (keep defs)
+  const toRemove = svg.querySelectorAll('.conn-group');
+  toRemove.forEach(el => el.remove());
+
+  connections.forEach(([fromId, toId, label, dashed]) => {
+    const fromEl = document.getElementById(fromId);
+    const toEl = document.getElementById(toId);
+    if (!fromEl || !toEl) return;
+
+    const from = getCenter(fromEl);
+    const to = getCenter(toEl);
+
+    // Determine exit/entry points based on relative position
+    let x1, y1, x2, y2;
+    const isRightOf = to.x > from.x + 20;
+    const isLeftOf = to.x < from.x - 20;
+
+    if (isRightOf) {
+      x1 = from.right; y1 = from.y;
+      x2 = to.left;    y2 = to.y;
+    } else if (isLeftOf) {
+      x1 = from.left;  y1 = from.y;
+      x2 = to.right;   y2 = to.y;
+    } else {
+      // roughly same column: vertical
+      if (to.y > from.y) {
+        x1 = from.x; y1 = from.bottom;
+        x2 = to.x;   y2 = to.top;
+      } else {
+        x1 = from.x; y1 = from.top;
+        x2 = to.x;   y2 = to.bottom;
+      }
+    }
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','conn-group');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', cubicPath(x1,y1,x2,y2));
+    path.setAttribute('class', 'arrow-line' + (dashed ? ' dashed' : ''));
+    path.setAttribute('marker-end', dashed ? 'url(#arrowhead-dashed)' : 'url(#arrowhead)');
+    g.appendChild(path);
+
+    // Label at midpoint
+    if (label) {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2 - 6;
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('x', mx);
+      text.setAttribute('y', my);
+      text.setAttribute('text-anchor','middle');
+      text.setAttribute('class','arrow-label');
+      text.textContent = label;
+      g.appendChild(text);
+    }
+
+    svg.appendChild(g);
+  });
+}
+
+// ── Init ──
+window.addEventListener('load', () => {
+  updateLines();
+});
+window.addEventListener('resize', () => {
+  updateLines();
+});
+
+// Also update on any scroll (for fixed SVG)
+window.addEventListener('scroll', () => {
+  updateLines();
+}, { passive: true });
+</script>
+</body>
+</html>

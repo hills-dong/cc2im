@@ -193,7 +193,8 @@ export async function handleApi(
   // GET /api/sessions?project=xxx
   if (method === "GET" && pathname === "/api/sessions") {
     const project = url.searchParams.get("project") ?? undefined;
-    return json(res, 200, ctx.store.listSessions(project));
+    const platform = (url.searchParams.get("platform") ?? undefined) as import("@cc2im/core").Platform | undefined;
+    return json(res, 200, ctx.store.listSessions(project, false, platform));
   }
 
   // GET /api/stats/overview?window=24h|7d|all

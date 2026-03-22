@@ -4,7 +4,7 @@
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import MessageBubble from '$lib/MessageBubble.svelte';
   import ChatInput from '$lib/ChatInput.svelte';
-  import { sessions, sendMessage } from '$lib/stores/chat';
+  import { sessions, sendMessage, rekeySession } from '$lib/stores/chat';
   import { send } from '$lib/stores/connection';
   import MessageSquare from 'lucide-svelte/icons/message-square';
 
@@ -28,9 +28,12 @@
 
   // Navigate to the session URL using threadKey (matches sidebar links)
   $effect(() => {
-    if (session?.threadKey && !isStreaming && !navigated && messages.length > 0) {
+    if (session?.threadKey && !navigated && messages.length > 0) {
       navigated = true;
-      goto(`/chat/${encodeURIComponent(project)}/${encodeURIComponent(session.threadKey)}`, { replaceState: true });
+      const threadKey = session.threadKey;
+      goto(`/chat/${encodeURIComponent(project)}/${encodeURIComponent(threadKey)}`, { replaceState: true });
+      // Move session from temporary "new-{project}" key to threadKey so [session] page can find it
+      rekeySession(sessKey, threadKey);
     }
   });
 

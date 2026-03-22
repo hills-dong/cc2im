@@ -1,7 +1,9 @@
 # Platform credentials (prefer env vars: DISCORD_TOKEN, LARK_APP_ID, LARK_APP_SECRET)
+# Lark/飞书 (prefer env vars: LARK_APP_ID, LARK_APP_SECRET, LARK_OWNER_OPEN_ID)
 lark:
   appId: ""
   appSecret: ""
+  ownerOpenId: ""  # your open_id, so the bot auto-invites you to project groups
 
 discord:
   token: ""
@@ -12,6 +14,7 @@ projects:
     directory: "/path/to/project"
     platforms:
       discord: true
+      lark: true
 
 # Claude Code CLI settings
 claude:

@@ -3,7 +3,8 @@ import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import http from "http";
-import { createServer } from "../src/server.js";
+import { loadConfig, Store } from "@cc2im/core";
+import { createTestApiServer } from "./test-helpers.js";
 
 function request(
   server: http.Server,
@@ -54,13 +55,9 @@ describe("API Helpers", () => {
       configPath,
       `lark:\n  appId: "test-id"\n  appSecret: "secret-value"\ndiscord:\n  token: "test-token-123"\nprojects: []\nclaude:\n  command: "claude"\n  defaultArgs: ["--print"]\n  bufferInterval: 500\n  timeout: 30000\nformatter:\n  maxMessageLength:\n    discord: 2000\n    lark: 30000\n  maxConcurrentProcesses: 3\n`,
     );
-    server = await createServer({
-      port: 0,
-      bind: "127.0.0.1",
-      configPath,
-      dbPath,
-      skipAuth: true,
-    });
+    const config = loadConfig(configPath);
+    const store = new Store(dbPath);
+    server = await createTestApiServer({ config, configPath, store });
   });
 
   afterAll(() => {

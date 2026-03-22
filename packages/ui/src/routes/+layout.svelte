@@ -104,7 +104,7 @@
 </script>
 
 <ModeWatcher defaultMode="dark" />
-<Toaster />
+<Toaster position="top-right" />
 
 <div class="flex flex-col h-screen" class:select-none={isDragging}>
   {#if isTauri}

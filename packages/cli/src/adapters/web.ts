@@ -3,7 +3,6 @@ import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer, WebSocket } from "ws";
-import { loadConfig } from "@cc2im/core";
 import { handleApi } from "@cc2im/server/api";
 import type { ApiContext } from "@cc2im/server/api";
 import type { Store, AppConfig, TokenStats } from "@cc2im/core";
@@ -40,6 +39,13 @@ export class WebAdapter implements PlatformAdapter {
   private clients = new Set<WebSocket>();
   private messageHandler?: (msg: IncomingMessage) => void;
   private reactionHandler?: (reaction: Reaction) => void;
+  private abortHandler?: (threadKey: string) => void;
+
+  // Per-thread subscriptions: only subscribed clients receive stream events
+  private subscriptions = new Map<string, Set<WebSocket>>();
+
+  // Track the latest streaming content per thread for reconnect recovery
+  private streamBuffers = new Map<string, string>();
 
   // Track messageId → threadId for editMessage routing
   private messageThreadMap = new Map<string, string>();
@@ -52,7 +58,6 @@ export class WebAdapter implements PlatformAdapter {
     // Auto-detect UI dist directory
     let staticDir = this.options.staticDir;
     if (!staticDir) {
-      // Try relative to @cc2im/server package (monorepo layout)
       const candidates = [
         join(__dirname, "../../../ui/dist"),       // from cli/src/adapters/
         join(__dirname, "../../../../ui/dist"),     // fallback
@@ -104,7 +109,12 @@ export class WebAdapter implements PlatformAdapter {
             const project = msg.project as string;
             const message = msg.message as string;
             const threadKey = (msg.threadKey as string) || null;
-            const channelId = `web:${project}`;
+            const channelId = `wb_${project}`;
+
+            // Auto-subscribe sender to this thread's events
+            if (threadKey) {
+              this.subscribe(ws, threadKey);
+            }
 
             this.messageHandler?.({
               platform: "web",
@@ -119,8 +129,35 @@ export class WebAdapter implements PlatformAdapter {
             break;
           }
 
+          case "chat.subscribe": {
+            const threadKey = msg.threadKey as string;
+            if (threadKey) {
+              this.subscribe(ws, threadKey);
+
+              // If there's an active stream, send buffered content for recovery
+              const buffered = this.streamBuffers.get(threadKey);
+              if (buffered !== undefined) {
+                // Find the messageId for this thread's active stream
+                let activeMessageId: string | undefined;
+                for (const [mid, tid] of this.messageThreadMap) {
+                  if (tid === threadKey) { activeMessageId = mid; break; }
+                }
+                this.send(ws, {
+                  type: "chat.recover",
+                  threadId: threadKey,
+                  messageId: activeMessageId,
+                  content: buffered,
+                });
+              }
+            }
+            break;
+          }
+
           case "chat.abort": {
-            // Abort is handled at the SessionManager level via the adapter pattern
+            const threadKey = msg.threadKey as string;
+            if (threadKey) {
+              this.abortHandler?.(threadKey);
+            }
             break;
           }
 
@@ -135,11 +172,11 @@ export class WebAdapter implements PlatformAdapter {
       });
 
       ws.on("close", () => {
-        this.clients.delete(ws);
+        this.removeClient(ws);
       });
 
       ws.on("error", () => {
-        this.clients.delete(ws);
+        this.removeClient(ws);
       });
     });
 
@@ -167,12 +204,12 @@ export class WebAdapter implements PlatformAdapter {
   }
 
   async setupProject(project: ProjectConfig): Promise<ChannelInfo> {
-    return { channelId: `web:${project.name}`, platform: "web", projectName: project.name };
+    return { channelId: `wb_${project.name}`, platform: "web", projectName: project.name };
   }
 
   async createThread(channelId: string, _messageId: string): Promise<string> {
-    const project = channelId.replace("web:", "");
-    return `web:${project}:${Date.now()}`;
+    const project = channelId.replace("wb_", "");
+    return `wb_${project}:${Date.now()}`;
   }
 
   async getThreadName(_threadId: string): Promise<string> {
@@ -186,7 +223,9 @@ export class WebAdapter implements PlatformAdapter {
   async sendMessage(_channelId: string, threadId: string, content: string): Promise<string> {
     const messageId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.messageThreadMap.set(messageId, threadId);
-    this.broadcast({
+    // Populate stream buffer immediately so recovery works even before first editMessage
+    this.streamBuffers.set(threadId, content);
+    this.sendToThread(threadId, {
       type: "chat.message",
       threadId,
       messageId,
@@ -198,7 +237,10 @@ export class WebAdapter implements PlatformAdapter {
   async editMessage(_channelId: string, messageId: string, content: string): Promise<void> {
     const threadId = this.messageThreadMap.get(messageId);
     if (threadId) {
-      this.broadcast({
+      // Update stream buffer for reconnect recovery
+      this.streamBuffers.set(threadId, content);
+
+      this.sendToThread(threadId, {
         type: "chat.update",
         threadId,
         messageId,
@@ -208,7 +250,7 @@ export class WebAdapter implements PlatformAdapter {
   }
 
   async uploadFile(_channelId: string, threadId: string, filename: string, content: Buffer): Promise<void> {
-    this.broadcast({
+    this.sendToThread(threadId, {
       type: "chat.file",
       threadId,
       filename,
@@ -228,9 +270,14 @@ export class WebAdapter implements PlatformAdapter {
     this.reactionHandler = handler;
   }
 
+  onAbort(handler: (threadKey: string) => void): void {
+    this.abortHandler = handler;
+  }
+
   /** Send completion signal with token stats (called after handleMessage finishes) */
   sendDone(threadId: string, tokens: TokenStats): void {
-    this.broadcast({ type: "chat.done", threadId, tokens });
+    this.streamBuffers.delete(threadId);
+    this.sendToThread(threadId, { type: "chat.done", threadId, tokens });
   }
 
   /** Notify sidebar of new/updated session */
@@ -240,12 +287,41 @@ export class WebAdapter implements PlatformAdapter {
 
   /** Send error signal (called when handleMessage throws) */
   sendError(threadId: string, error: string): void {
-    this.broadcast({ type: "chat.error", threadId, error: { code: "INVOKE_ERROR", message: error } });
+    this.streamBuffers.delete(threadId);
+    this.sendToThread(threadId, { type: "chat.error", threadId, error: { code: "INVOKE_ERROR", message: error } });
+  }
+
+  private subscribe(ws: WebSocket, threadKey: string): void {
+    if (!this.subscriptions.has(threadKey)) {
+      this.subscriptions.set(threadKey, new Set());
+    }
+    this.subscriptions.get(threadKey)!.add(ws);
+  }
+
+  private removeClient(ws: WebSocket): void {
+    this.clients.delete(ws);
+    for (const [key, subs] of this.subscriptions) {
+      subs.delete(ws);
+      if (subs.size === 0) this.subscriptions.delete(key);
+    }
   }
 
   private send(ws: WebSocket, msg: unknown): void {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
+    }
+  }
+
+  /** Send to thread subscribers, falling back to broadcast if none subscribed */
+  private sendToThread(threadId: string, msg: unknown): void {
+    const subs = this.subscriptions.get(threadId);
+    if (subs && subs.size > 0) {
+      const data = JSON.stringify(msg);
+      for (const client of subs) {
+        if (client.readyState === WebSocket.OPEN) client.send(data);
+      }
+    } else {
+      this.broadcast(msg);
     }
   }
 

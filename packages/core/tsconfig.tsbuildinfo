@@ -1,0 +1,1 @@
+{"root":["./src/config.ts","./src/formatter.ts","./src/index.ts","./src/router.ts","./src/session.ts","./src/store.ts","./src/types.ts","./src/adapters/adapter.ts","./src/adapters/discord.ts"],"version":"5.9.3"}

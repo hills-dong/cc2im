@@ -3,7 +3,8 @@ import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import http from "http";
-import { createServer } from "../src/server.js";
+import { loadConfig, Store } from "@cc2im/core";
+import { createTestApiServer } from "./test-helpers.js";
 
 function request(
   server: http.Server,
@@ -107,13 +108,9 @@ formatter:
 `,
     );
 
-    server = await createServer({
-      port: 0,
-      bind: "127.0.0.1",
-      configPath,
-      dbPath,
-      skipAuth: true,
-    });
+    const config = loadConfig(configPath);
+    const store = new Store(dbPath);
+    server = await createTestApiServer({ config, configPath, store });
   });
 
   afterAll(async () => {

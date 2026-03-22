@@ -5,6 +5,7 @@ import {
   type PlatformAdapter, type IncomingMessage, type Reaction,
 } from "@cc2im/core";
 import { DiscordAdapter } from "./adapters/discord.js";
+import { LarkAdapter } from "./adapters/lark.js";
 import type { ChatInputCommandInteraction } from "discord.js";
 import { resolve, join, dirname } from "path";
 import { resolveConfigPath } from "./service.js";
@@ -113,6 +114,12 @@ export async function main(options?: MainOptions) {
     adapters.push(discord);
   }
 
+  // Initialize Lark adapter if configured
+  if (config.lark?.appId && config.lark?.appSecret) {
+    const larkAdapter = new LarkAdapter(config.lark.appId, config.lark.appSecret, config.lark.ownerOpenId);
+    adapters.push(larkAdapter);
+  }
+
   // Initialize Web adapter if web port is configured
   let webAdapter: import("./adapters/web.js").WebAdapter | null = null;
   if (options?.webPort) {
@@ -124,6 +131,7 @@ export async function main(options?: MainOptions) {
       store,
       config,
     });
+    webAdapter.onAbort((threadKey) => sessionManager.abort(threadKey));
     adapters.push(webAdapter);
   }
 
@@ -134,7 +142,7 @@ export async function main(options?: MainOptions) {
     // Setup project channels — web adapter registers all projects
     for (const project of config.projects) {
       if (adapter.platform !== "web" && !project.platforms[adapter.platform]) continue;
-      const channelInfo = await adapter.setupProject(project);
+      const channelInfo = await adapter.setupProject(project, store);
       router.registerChannel(channelInfo.channelId, adapter.platform, project.name);
       console.log(`Registered ${adapter.platform} channel ${channelInfo.channelId} → ${project.name}`);
     }
@@ -146,6 +154,12 @@ export async function main(options?: MainOptions) {
       adapter.onMessage(async (msg) => {
         const threadId = msg.threadId ?? msg.channelId;
         const project = router.getProject(msg.channelId, msg.platform);
+        // Notify sidebar immediately for new threads so they appear while Claude is thinking
+        if (threadId && !store.getThread(threadId, "web")) {
+          const threadName = msg.content.replace(/\n/g, " ").slice(0, 50) || "New conversation";
+          store.upsertThread(threadId, "web", msg.channelId, "", project?.name ?? "", threadName);
+          wa.sendSessionUpdate(project?.name ?? "", threadId, threadName);
+        }
         try {
           await handleMessage(msg, adapter, router, sessionManager, formatter, store, config);
           const tokens = store.getSessionTokens(threadId);
@@ -154,7 +168,7 @@ export async function main(options?: MainOptions) {
           console.error("Error handling web message:", err);
           wa.sendError(threadId, err instanceof Error ? err.message : String(err));
         }
-        // Notify sidebar of new/updated session
+        // Notify sidebar of updated session (name/session_id may have changed)
         const thread = store.getThread(threadId, "web");
         wa.sendSessionUpdate(project?.name ?? "", threadId, thread?.name ?? "");
       });
@@ -214,26 +228,43 @@ export async function main(options?: MainOptions) {
       console.log(`Resuming session ${thread.session_id} in thread ${thread.thread_id}...`);
 
       // Resume session in background — don't block startup
-      sessionManager.invoke(
-        threadKey,
-        project.directory,
-        thread.session_id,
-        "cc2im 服务已重启完成，请简短告知用户重启成功并继续之前的工作。",
-        () => {},
-        undefined,
-        undefined,
-        project.model,
-      ).then(async (result) => {
-        store.upsertThread(thread.thread_id, thread.platform as any, thread.channel_id, result.sessionId, thread.project_name);
-        const { cleanText } = formatter.extractReactions(result.text);
-        const formatted = formatter.formatOutput(cleanText, thread.platform as any);
-        for (const msg of formatted.messages) {
-          await adapter.sendMessage(thread.channel_id, thread.thread_id, msg);
+      const resumeMsg = "cc2im 服务已重启完成，请简短告知用户重启成功并继续之前的工作。";
+
+      const attemptResume = async (attempt: number): Promise<void> => {
+        try {
+          const result = await sessionManager.invoke(
+            threadKey,
+            project.directory,
+            thread.session_id,
+            resumeMsg,
+            () => {},
+            undefined,
+            undefined,
+            project.model,
+          );
+          store.upsertThread(thread.thread_id, thread.platform as any, thread.channel_id, result.sessionId, thread.project_name);
+          const { cleanText } = formatter.extractReactions(result.text);
+          const formatted = formatter.formatOutput(cleanText, thread.platform as any);
+          for (const msg of formatted.messages) {
+            await adapter.sendMessage(thread.channel_id, thread.thread_id, msg);
+          }
+          console.log(`Resumed thread ${thread.thread_id} successfully.`);
+        } catch (err) {
+          if (attempt < 2) {
+            console.warn(`Resume attempt ${attempt} failed for ${thread.thread_id}, retrying in 3s...`);
+            await new Promise(r => setTimeout(r, 3000));
+            return attemptResume(attempt + 1);
+          }
+          console.error(`Failed to resume thread ${thread.thread_id} after ${attempt} attempts:`, err);
+          store.updateThreadStatus(thread.thread_id, thread.platform as any, "done");
+          await adapter.sendMessage(
+            thread.channel_id, thread.thread_id,
+            `⚠️ 服务已重启，但会话恢复失败：${err instanceof Error ? err.message : String(err)}\n请发送新消息继续。`,
+          ).catch(() => {});
         }
-        console.log(`Resumed thread ${thread.thread_id} successfully.`);
-      }).catch((err) => {
-        console.error(`Failed to resume thread ${thread.thread_id}:`, err);
-      });
+      };
+
+      attemptResume(1);
     }
   }
 
@@ -292,7 +323,10 @@ async function handleMessage(
 
   // Find project for this channel
   const project = router.getProject(msg.channelId, msg.platform);
-  if (!project) return; // Not a registered channel
+  if (!project) {
+    console.log(`[cc2im] Ignoring message from unregistered channel: ${msg.platform}:${msg.channelId}`);
+    return;
+  }
 
   // Create thread if this is a top-level message
   let threadId = msg.threadId;
@@ -399,13 +433,22 @@ async function handleMessage(
 
   // Periodic flush timer - updates message every 3s with elapsed time
   console.log(`[stream] Timer started for thread ${threadId}, messageId ${currentMessageId}`);
+  let lastDbSaveText = "";
+  let flushCount = 0;
+  const dbSaveEveryN = msg.platform === "web" ? 30 : 1; // ~3s for web (100ms×30), every tick for others
   const flushTimer = setInterval(async () => {
+    flushCount++;
     const display = buildDisplay();
     console.log(`[stream] Tick ${formatElapsed()} | activities=${activities.length} | text=${bufferedText.length}c`);
     try {
       await adapter.editMessage(threadId!, currentMessageId, display);
     } catch (err) {
       console.error(`[stream] editMessage failed:`, err);
+    }
+    // Periodically persist buffered text to DB so page refresh without WS recovery still shows content
+    if (flushCount % dbSaveEveryN === 0 && bufferedText && bufferedText !== lastDbSaveText) {
+      lastDbSaveText = bufferedText;
+      store.saveMessage(currentMessageId, msg.platform, threadId, true, bufferedText.slice(0, 500));
     }
   }, flushInterval);
 
@@ -466,8 +509,8 @@ async function handleMessage(
       project.model,
     );
 
-    // Update thread with real Claude session ID (threadName already set on creation)
-    store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, threadName);
+    // Update thread with real Claude session ID; preserve existing name
+    store.upsertThread(threadId, msg.platform, msg.channelId, result.sessionId, project.name, existingThread ? undefined : threadName);
 
     // If AskUserQuestion was intercepted, send questions to user and wait for reply
     if (lastAskQuestions) {
@@ -628,12 +671,14 @@ async function handleMessage(
     }
 
     // Update message record
-    store.saveMessage(currentMessageId, msg.platform, threadId, true, cleanText.slice(0, 200), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens, project.model);
+    store.saveMessage(currentMessageId, msg.platform, threadId, true, cleanText.slice(0, 500), result.inputTokens, result.outputTokens, result.cacheReadTokens, result.cacheCreationTokens, project.model);
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const displayMsg = formatUserError(err);
     await adapter.editMessage(threadId!, currentMessageId, displayMsg);
+    // Persist error content to DB so page refresh doesn't show stale "thinking..."
+    store.saveMessage(currentMessageId, msg.platform, threadId, true, displayMsg.slice(0, 500));
 
     // If resume failed, clear session and notify
     if (errorMsg.includes("resume") || errorMsg.includes("session")) {
@@ -828,6 +873,88 @@ async function handleManagementCommand(
       sessionManager?.updateConfig(config.claude, config.formatter);
       formatter?.updateConfig(config.formatter);
       await adapter.sendMessage(msg.channelId, threadId, "✅ Config reloaded");
+      break;
+    }
+
+    case "init": {
+      if (msg.platform !== "lark") {
+        break;
+      }
+      if (config.lark?.ownerOpenId) {
+        break;
+      }
+
+      // Add owner to all existing Lark project groups first — fail fast before saving
+      const larkAdapter = adapter as import("./adapters/lark.js").LarkAdapter;
+      const larkChannels = [...router.getLarkChannelIds()];
+      let addedCount = 0;
+      for (const chatId of larkChannels) {
+        try {
+          await larkAdapter.addMemberToChat(chatId, msg.userId);
+          addedCount++;
+        } catch (err) {
+          await adapter.sendMessage(msg.channelId, threadId,
+            `❌ 拉群失败，请检查应用权限 (im:chat 或 im:chat.members:write_only)`
+          );
+          return;
+        }
+      }
+
+      // Transfer ownership of all Lark groups to the user
+      for (const chatId of larkChannels) {
+        try {
+          await larkAdapter.transferChatOwner(chatId, msg.userId);
+        } catch (err) {
+          // Non-fatal: owner transfer may fail if bot lacks permission
+          console.error(`[cc2im] Failed to transfer ownership for ${chatId}:`, err);
+        }
+      }
+
+      // All succeeded — save owner open_id to config
+      config.lark.ownerOpenId = msg.userId;
+      saveConfig(CONFIG_PATH, config);
+
+      await adapter.sendMessage(msg.channelId, threadId,
+        `✅ 已保存你的 ID (${msg.userId})，并将你拉入 ${addedCount} 个项目群并设为群主`
+      );
+      break;
+    }
+
+    case "update": {
+      if (msg.platform !== "lark") {
+        await adapter.sendMessage(msg.channelId, threadId, "⚠️ 此命令仅支持 Lark");
+        break;
+      }
+      const larkAdapterUpd = adapter as import("./adapters/lark.js").LarkAdapter;
+      const chatName = await larkAdapterUpd.getChatName(msg.channelId);
+      if (!chatName) {
+        await adapter.sendMessage(msg.channelId, threadId, "❌ 无法获取当前群名称");
+        break;
+      }
+      // Match cc2im-{projectName}
+      const nameMatch = chatName.match(/^cc2im-(.+)$/);
+      if (!nameMatch) {
+        await adapter.sendMessage(msg.channelId, threadId,
+          `❌ 群名 "${chatName}" 不符合 \`cc2im-{项目名}\` 格式`
+        );
+        break;
+      }
+      const projectName = nameMatch[1];
+      const project = config.projects.find(p => p.name === projectName);
+      if (!project) {
+        await adapter.sendMessage(msg.channelId, threadId,
+          `❌ 未找到项目 "${projectName}"，已有项目: ${config.projects.map(p => p.name).join(", ")}`
+        );
+        break;
+      }
+      // Replace old mapping
+      const oldChatId = router.unregisterProject("lark", projectName);
+      router.registerChannel(msg.channelId, "lark", projectName);
+      // Write a thread record so DB remembers this channel for next restart
+      store.upsertThread(msg.channelId, "lark", msg.channelId, "", projectName, "__channel_update__");
+      await adapter.sendMessage(msg.channelId, threadId,
+        `✅ 项目 **${projectName}** 已关联到当前群${oldChatId ? ` (旧群: ${oldChatId})` : ""}`
+      );
       break;
     }
 

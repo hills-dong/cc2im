@@ -5,8 +5,8 @@
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import MessageBubble from '$lib/MessageBubble.svelte';
   import ChatInput from '$lib/ChatInput.svelte';
-  import { sessions, sendMessage, loadSession } from '$lib/stores/chat';
-  import { send } from '$lib/stores/connection';
+  import { sessions, sendMessage, loadSession, subscribeThread } from '$lib/stores/chat';
+  import { send, onReconnect } from '$lib/stores/connection';
 
   let project = $derived($page.params.project ?? '');
   let sessionId = $derived($page.params.session ?? '');
@@ -31,10 +31,14 @@
     const sid = sessionId;
     const proj = project;
     if (!sid) return;
+    // Subscribe to stream events (triggers recovery if stream is in-flight)
+    subscribeThread(sid);
     loadSession('', sid, proj).catch(() => {
       toast.error('Failed to load session');
       goto('/chat', { replaceState: true });
     });
+    // Re-subscribe on WebSocket reconnect so in-flight streams resume
+    return onReconnect(() => subscribeThread(sid));
   });
 
   $effect(() => {

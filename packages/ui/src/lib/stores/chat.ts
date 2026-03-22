@@ -36,6 +36,8 @@ export const sessions = writable<Map<string, Session>>(new Map());
 const threadKeyMap = new Map<string, string>();
 // Map server messageId → { sessKey, localMsgId } for correlating updates
 const messageIdMap = new Map<string, { sessKey: string; localMsgId: string }>();
+// Buffer recovery data when session hasn't loaded yet (race condition on refresh)
+const pendingRecovery = new Map<string, { content: string; messageId?: string }>();
 
 // --- chat.message: new message from adapter.sendMessage ---
 on("chat.message", (event) => {
@@ -129,6 +131,51 @@ on("chat.done", (event) => {
   threadKeyMap.delete(threadId);
 });
 
+// --- chat.recover: reconnect recovery for in-flight streams ---
+on("chat.recover", (event) => {
+  const threadId = event.threadId as string;
+  const content = event.content as string;
+  const messageId = event.messageId as string | undefined;
+
+  // Always register threadKey mapping so subsequent chat.update/chat.done events route correctly
+  threadKeyMap.set(threadId, threadId);
+
+  sessions.update(s => {
+    const session = s.get(threadId);
+    if (!session) {
+      // Session not loaded yet (loadSession HTTP still in flight) — buffer for later
+      pendingRecovery.set(threadId, { content, messageId });
+      return s;
+    }
+
+    return applyRecovery(s, threadId, content, messageId);
+  });
+});
+
+/** Apply recovery data to a session (shared by chat.recover and loadSession) */
+function applyRecovery(s: Map<string, Session>, threadId: string, content: string, messageId?: string): Map<string, Session> {
+  const session = s.get(threadId);
+  if (!session) return s;
+
+  const last = session.messages[session.messages.length - 1];
+  if (last?.role === "assistant") {
+    // Replace the last assistant message (which may be a stale "thinking..." from DB)
+    // with the recovered streaming content
+    const updated = { ...last, content, streaming: true, id: messageId ?? last.id };
+    const newMessages = [...session.messages.slice(0, -1), updated];
+    const newMap = new Map(s);
+    newMap.set(threadId, { ...session, messages: newMessages, threadKey: threadId });
+    return newMap;
+  }
+
+  // No assistant message at all — create one
+  const replyId = messageId ?? `recover-${Date.now()}`;
+  const newMessages = [...session.messages, { id: replyId, role: "assistant" as const, content, streaming: true }];
+  const newMap = new Map(s);
+  newMap.set(threadId, { ...session, messages: newMessages, threadKey: threadId });
+  return newMap;
+}
+
 // --- chat.error: handleMessage threw ---
 on("chat.error", (event) => {
   const threadId = event.threadId as string;
@@ -194,13 +241,44 @@ export async function loadSession(baseUrl: string, threadId: string, project: st
     }
 
     sessions.update(s => {
-      const newMap = new Map(s);
+      let newMap = new Map(s);
       newMap.set(threadId, { id: threadId, project, messages, threadKey: threadId, baseInputTokens, baseOutputTokens, baseCacheReadTokens, baseCacheCreationTokens });
+
+      // Apply any pending recovery that arrived before loadSession completed
+      const pending = pendingRecovery.get(threadId);
+      if (pending) {
+        pendingRecovery.delete(threadId);
+        newMap = applyRecovery(newMap, threadId, pending.content, pending.messageId);
+      }
+
       return newMap;
     });
   } catch {
     // Silently fail
   }
+}
+
+/** Re-key a session: move it from oldKey to newKey in both sessions store and threadKeyMap */
+export function rekeySession(oldKey: string, newKey: string): void {
+  sessions.update(s => {
+    const session = s.get(oldKey);
+    if (!session) return s;
+    const newMap = new Map(s);
+    newMap.set(newKey, session);
+    newMap.delete(oldKey);
+    return newMap;
+  });
+  // Update threadKeyMap: any entry pointing to oldKey should now point to newKey
+  for (const [tk, sk] of threadKeyMap.entries()) {
+    if (sk === oldKey) {
+      threadKeyMap.set(tk, newKey);
+    }
+  }
+}
+
+/** Subscribe to a thread's stream events; triggers recovery if stream is in-flight */
+export function subscribeThread(threadKey: string): void {
+  send({ type: "chat.subscribe", threadKey });
 }
 
 export function sendMessage(project: string, message: string, sessionId?: string): void {
@@ -211,7 +289,7 @@ export function sendMessage(project: string, message: string, sessionId?: string
   let threadKey = "";
   sessions.update(s => {
     const existing = s.get(sessKey);
-    threadKey = existing?.threadKey ?? `web:${project}:${Date.now()}`;
+    threadKey = existing?.threadKey ?? `wb_${project}:${Date.now()}`;
     return s;
   });
 

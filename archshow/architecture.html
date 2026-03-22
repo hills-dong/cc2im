@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cc2im — Architecture Deep Dive</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #09090b;
+    --bg-card: #18181b;
+    --bg-code: #1e1e22;
+    --border: #27272a;
+    --border-hover: #3f3f46;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --cyan: #4cc9f0;
+    --cyan-dim: #4cc9f033;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --purple: #a78bfa;
+    --orange: #fb923c;
+    --pink: #f472b6;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Header */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .header h1 span { color: var(--cyan); }
+  .header p {
+    color: var(--text-muted);
+    margin-top: 8px;
+    font-size: 14px;
+  }
+
+  /* Navigation */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 0 24px;
+  }
+  .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    gap: 4px;
+  }
+  .nav a {
+    display: inline-block;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .nav a:hover {
+    color: var(--text);
+    text-decoration: none;
+    border-bottom-color: var(--border-hover);
+  }
+
+  /* Layout */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+  section {
+    padding: 48px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-child { border-bottom: none; }
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2 .badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--cyan-dim);
+    color: var(--cyan);
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 24px 0 12px;
+    color: var(--text-muted);
+  }
+  p { margin-bottom: 12px; color: var(--text-muted); font-size: 14px; }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  @media (max-width: 768px) {
+    .grid-2, .grid-3, .grid-5 { grid-template-columns: 1fr; }
+  }
+
+  /* Code */
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    margin-bottom: 16px;
+    color: var(--text-muted);
+  }
+  code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+  .kw { color: var(--purple); }
+  .tp { color: var(--cyan); }
+  .str { color: var(--green); }
+  .cm { color: var(--text-dim); }
+  .fn { color: var(--yellow); }
+  .num { color: var(--orange); }
+  .prop { color: var(--pink); }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  tr:last-child td { border-bottom: none; }
+  td code {
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--cyan);
+  }
+
+  /* Mermaid */
+  .mermaid-wrapper {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+  }
+  .mermaid { text-align: center; }
+  .mermaid svg { max-width: 100%; }
+
+  /* Collapsible */
+  details {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  details[open] { border-color: var(--border-hover); }
+  summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  summary::before {
+    content: "▸";
+    font-size: 12px;
+    color: var(--text-dim);
+    transition: transform 0.2s;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary::-webkit-details-marker { display: none; }
+  .details-body { padding: 0 20px 20px; }
+
+  /* Flowstep */
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .flow-step {
+    display: flex;
+    gap: 16px;
+    padding: 14px 0;
+  }
+  .flow-num {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: var(--cyan-dim);
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .flow-content { flex: 1; }
+  .flow-content strong { color: var(--text); font-size: 14px; }
+  .flow-content p { margin: 4px 0 0; font-size: 13px; }
+
+  /* Tag */
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 500;
+    font-family: var(--font-mono);
+  }
+  .tag-cyan { background: var(--cyan-dim); color: var(--cyan); }
+  .tag-green { background: #34d39933; color: var(--green); }
+  .tag-yellow { background: #fbbf2433; color: var(--yellow); }
+  .tag-purple { background: #a78bfa33; color: var(--purple); }
+  .tag-orange { background: #fb923c33; color: var(--orange); }
+  .tag-pink { background: #f472b633; color: var(--pink); }
+  .tag-red { background: #f8717133; color: var(--red); }
+
+  /* File tree */
+  .file-tree { font-family: var(--font-mono); font-size: 13px; line-height: 2; }
+  .file-tree .dir { color: var(--cyan); }
+  .file-tree .file { color: var(--text-muted); }
+  .file-tree .desc { color: var(--text-dim); font-family: var(--font-sans); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="container">
+    <h1><span>cc2im</span> Architecture</h1>
+    <p>Claude Code → IM Bridge &mdash; Chat with Claude Code via Discord, Lark, and Web UI</p>
+  </div>
+</div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#overview">Overview</a>
+    <a href="#packages">Packages</a>
+    <a href="#types">Types</a>
+    <a href="#message-flow">Message Flow</a>
+    <a href="#adapters">Adapters</a>
+    <a href="#session">SessionManager</a>
+    <a href="#router">Router</a>
+    <a href="#formatter">Formatter</a>
+    <a href="#store">Database</a>
+    <a href="#websocket">WebSocket</a>
+    <a href="#ui">UI</a>
+    <a href="#config">Config</a>
+    <a href="#cli">CLI</a>
+    <a href="#api">API</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<section id="overview">
+  <h2>System Overview</h2>
+  <p>cc2im is a monorepo bridge that connects Claude Code (Anthropic's AI coding assistant) to messaging platforms and a web interface. Users send messages via Discord threads, Lark group chats, or a Web UI, and cc2im spawns Claude Code child processes to handle each conversation with persistent per-thread sessions.</p>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+graph LR
+  subgraph Clients
+    D[Discord]
+    L[Lark]
+    W[Web UI]
+  end
+
+  subgraph "cc2im (Node.js)"
+    DA[DiscordAdapter]
+    LA[LarkAdapter]
+    WA[WebAdapter<br>HTTP + WS]
+    R[Router]
+    SM[SessionManager]
+    F[Formatter]
+    ST[(SQLite)]
+  end
+
+  CC[Claude Code<br>child process]
+
+  D <-->|Bot API| DA
+  L <-->|WebSocket SDK| LA
+  W <-->|WS + HTTP| WA
+
+  DA --> R
+  LA --> R
+  WA --> R
+  R --> SM
+  SM -->|spawn --resume| CC
+  CC -->|stream-json stdout| SM
+  SM --> F
+  F --> DA
+  F --> LA
+  F --> WA
+
+  SM -.->|tokens, sessions| ST
+  R -.->|channel mapping| ST
+
+  style D fill:#5865F2,color:#fff,stroke:none
+  style L fill:#2D60F5,color:#fff,stroke:none
+  style W fill:#4cc9f0,color:#000,stroke:none
+  style CC fill:#D97706,color:#fff,stroke:none
+  style ST fill:#27272a,color:#a1a1aa,stroke:#3f3f46
+    </pre>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="packages">
+  <h2>Package Structure <span class="badge">Monorepo</span></h2>
+
+  <div class="grid-5">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--cyan)"></span> core</div>
+      <p>Types, SessionManager, Router, Store, Formatter — zero platform dependencies</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--green)"></span> cli</div>
+      <p>Entry point, platform adapters (Discord, Lark, Web), service management</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--purple)"></span> server</div>
+      <p>REST API route handler (<code>handleApi</code>) + API contracts</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--orange)"></span> ui</div>
+      <p>SvelteKit 5 + shadcn-svelte frontend with WebSocket real-time chat</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--pink)"></span> desktop</div>
+      <p>Tauri 2 native shell wrapping the Web UI</p>
+    </div>
+  </div>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+graph BT
+  core["@cc2im/core"]
+  server["@cc2im/server"]
+  cli["cc2im (cli)"]
+  ui["@cc2im/ui"]
+  desktop["desktop (Tauri)"]
+
+  server --> core
+  cli --> core
+  cli --> server
+  ui -.->|HTTP + WS| cli
+  desktop -.->|embeds| ui
+
+  style core fill:#4cc9f033,stroke:#4cc9f0,color:#4cc9f0
+  style server fill:#a78bfa33,stroke:#a78bfa,color:#a78bfa
+  style cli fill:#34d39933,stroke:#34d399,color:#34d399
+  style ui fill:#fb923c33,stroke:#fb923c,color:#fb923c
+  style desktop fill:#f472b633,stroke:#f472b6,color:#f472b6
+    </pre>
+  </div>
+
+  <h3>File Tree</h3>
+  <pre class="file-tree"><span class="dir">packages/</span>
+├── <span class="dir">core/src/</span>
+│   ├── <span class="file">types.ts</span>       <span class="desc">Platform, IncomingMessage, OutgoingMessage, AppConfig, StreamEvent, PlatformAdapter</span>
+│   ├── <span class="file">session.ts</span>     <span class="desc">SessionManager — spawns Claude Code, manages concurrency queues</span>
+│   ├── <span class="file">router.ts</span>      <span class="desc">Router — maps channelId+platform → project, parses /im-* commands</span>
+│   ├── <span class="file">store.ts</span>       <span class="desc">Store — SQLite wrapper: threads, messages, token stats, pending restarts</span>
+│   ├── <span class="file">formatter.ts</span>   <span class="desc">Formatter — splits long text, extracts reactions/images</span>
+│   ├── <span class="file">config.ts</span>      <span class="desc">loadConfig/saveConfig — YAML + env var overrides</span>
+│   └── <span class="file">index.ts</span>       <span class="desc">Barrel exports</span>
+├── <span class="dir">cli/src/</span>
+│   ├── <span class="file">index.ts</span>       <span class="desc">main() — init adapters, handleMessage, handleReaction, graceful shutdown</span>
+│   ├── <span class="file">cli.ts</span>         <span class="desc">CLI commands: install, uninstall, start, stop, restart, status, logs, run</span>
+│   ├── <span class="file">service.ts</span>     <span class="desc">systemd/launchd service file generation</span>
+│   └── <span class="dir">adapters/</span>
+│       ├── <span class="file">discord.ts</span> <span class="desc">DiscordAdapter — discord.js client, slash commands, threads</span>
+│       ├── <span class="file">lark.ts</span>    <span class="desc">LarkAdapter — Lark SDK, group chats, WebSocket event dispatch</span>
+│       └── <span class="file">web.ts</span>     <span class="desc">WebAdapter — HTTP server + WebSocket + static files + PlatformAdapter</span>
+├── <span class="dir">server/src/</span>
+│   ├── <span class="file">api.ts</span>         <span class="desc">handleApi — REST routes: config, projects, sessions, stats, claude/test</span>
+│   └── <span class="dir">contracts/</span>
+│       └── <span class="file">api.ts</span>     <span class="desc">API type definitions (ApiError, ProjectBody)</span>
+├── <span class="dir">ui/src/</span>
+│   ├── <span class="dir">routes/</span>        <span class="desc">SvelteKit file-based routing</span>
+│   │   ├── <span class="file">+layout.svelte</span>                        <span class="desc">Global layout: sidebar, theme, status bar</span>
+│   │   ├── <span class="file">chat/[project]/+page.svelte</span>           <span class="desc">Project view — session list</span>
+│   │   ├── <span class="file">chat/[project]/[session]/+page.svelte</span> <span class="desc">Chat conversation view</span>
+│   │   ├── <span class="file">stats/+page.svelte</span>                    <span class="desc">Token usage dashboard</span>
+│   │   └── <span class="file">config/+page.svelte</span>                   <span class="desc">Configuration editor</span>
+│   └── <span class="dir">lib/</span>
+│       ├── <span class="dir">stores/</span>
+│       │   ├── <span class="file">chat.ts</span>       <span class="desc">Session state, message mgmt, thread key mapping</span>
+│       │   └── <span class="file">connection.ts</span> <span class="desc">WebSocket lifecycle, reconnect, event dispatch</span>
+│       └── <span class="dir">components/</span>   <span class="desc">shadcn-svelte UI components</span>
+└── <span class="dir">desktop/</span>           <span class="desc">Tauri 2 config + Rust shell</span></pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="types">
+  <h2>Core Types <span class="badge">@cc2im/core</span></h2>
+
+  <div class="grid-2">
+    <details open>
+      <summary>Platform & Messages</summary>
+      <div class="details-body">
+<pre><span class="kw">type</span> <span class="tp">Platform</span> = <span class="str">"lark"</span> | <span class="str">"discord"</span> | <span class="str">"web"</span>;
+
+<span class="kw">interface</span> <span class="tp">IncomingMessage</span> {
+  <span class="prop">platform</span>: <span class="tp">Platform</span>;
+  <span class="prop">channelId</span>: <span class="tp">string</span>;      <span class="cm">// Discord: channel ID, Lark: chat ID, Web: wb_projectName</span>
+  <span class="prop">threadId</span>: <span class="tp">string | null</span>; <span class="cm">// null = new thread needed</span>
+  <span class="prop">messageId</span>: <span class="tp">string</span>;
+  <span class="prop">userId</span>: <span class="tp">string</span>;
+  <span class="prop">userName</span>: <span class="tp">string</span>;
+  <span class="prop">content</span>: <span class="tp">string</span>;
+  <span class="prop">attachments</span>: <span class="tp">Attachment[]</span>;
+  <span class="prop">replyToMessageId</span>?: <span class="tp">string</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">Attachment</span> {
+  <span class="prop">filename</span>: <span class="tp">string</span>;
+  <span class="prop">content</span>: <span class="tp">Buffer</span>;
+  <span class="prop">mimeType</span>?: <span class="tp">string</span>;
+}</pre>
+      </div>
+    </details>
+
+    <details open>
+      <summary>PlatformAdapter Interface</summary>
+      <div class="details-body">
+<pre><span class="kw">interface</span> <span class="tp">PlatformAdapter</span> {
+  <span class="kw">readonly</span> <span class="prop">platform</span>: <span class="tp">Platform</span>;
+
+  <span class="cm">// Lifecycle</span>
+  <span class="fn">start</span>(): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">stop</span>(): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">setupProject</span>(<span class="prop">project</span>): <span class="tp">Promise&lt;ChannelInfo&gt;</span>;
+
+  <span class="cm">// Thread management</span>
+  <span class="fn">createThread</span>(<span class="prop">channelId</span>, <span class="prop">messageId</span>): <span class="tp">Promise&lt;string&gt;</span>;
+  <span class="fn">getThreadName</span>(<span class="prop">threadId</span>): <span class="tp">Promise&lt;string&gt;</span>;
+  <span class="fn">renameThread</span>(<span class="prop">threadId</span>, <span class="prop">name</span>): <span class="tp">Promise&lt;void&gt;</span>;
+
+  <span class="cm">// Messaging</span>
+  <span class="fn">sendMessage</span>(<span class="prop">channelId</span>, <span class="prop">threadId</span>, <span class="prop">content</span>): <span class="tp">Promise&lt;string&gt;</span>;
+  <span class="fn">editMessage</span>(<span class="prop">channelId</span>, <span class="prop">messageId</span>, <span class="prop">content</span>): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">uploadFile</span>(<span class="prop">channelId</span>, <span class="prop">threadId</span>, <span class="prop">filename</span>, <span class="prop">content</span>): <span class="tp">Promise&lt;void&gt;</span>;
+  <span class="fn">addReaction</span>(<span class="prop">channelId</span>, <span class="prop">messageId</span>, <span class="prop">emoji</span>): <span class="tp">Promise&lt;void&gt;</span>;
+
+  <span class="cm">// Event handlers</span>
+  <span class="fn">onMessage</span>(<span class="prop">handler</span>): <span class="tp">void</span>;
+  <span class="fn">onReaction</span>(<span class="prop">handler</span>): <span class="tp">void</span>;
+}</pre>
+      </div>
+    </details>
+
+    <details>
+      <summary>Config Types</summary>
+      <div class="details-body">
+<pre><span class="kw">interface</span> <span class="tp">AppConfig</span> {
+  <span class="prop">lark</span>: { <span class="prop">appId</span>: <span class="tp">string</span>; <span class="prop">appSecret</span>: <span class="tp">string</span>; <span class="prop">ownerOpenId</span>?: <span class="tp">string</span> };
+  <span class="prop">discord</span>: { <span class="prop">token</span>: <span class="tp">string</span> };
+  <span class="prop">projects</span>: <span class="tp">ProjectConfig[]</span>;
+  <span class="prop">claude</span>: <span class="tp">ClaudeConfig</span>;
+  <span class="prop">formatter</span>: <span class="tp">FormatterConfig</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">ProjectConfig</span> {
+  <span class="prop">name</span>: <span class="tp">string</span>;
+  <span class="prop">directory</span>: <span class="tp">string</span>;
+  <span class="prop">model</span>?: <span class="tp">string</span>;
+  <span class="prop">platforms</span>: <span class="tp">Partial&lt;Record&lt;Platform, boolean&gt;&gt;</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">ClaudeConfig</span> {
+  <span class="prop">command</span>: <span class="tp">string</span>;              <span class="cm">// default: "claude"</span>
+  <span class="prop">defaultArgs</span>: <span class="tp">string[]</span>;         <span class="cm">// [--print, --output-format, stream-json, ...]</span>
+  <span class="prop">bufferInterval</span>: <span class="tp">number</span>;        <span class="cm">// ms between stream flushes</span>
+  <span class="prop">timeout</span>: <span class="tp">number</span>;               <span class="cm">// ms max process duration</span>
+}
+
+<span class="kw">interface</span> <span class="tp">FormatterConfig</span> {
+  <span class="prop">maxMessageLength</span>: <span class="tp">Record&lt;Platform, number&gt;</span>;  <span class="cm">// discord:2000, lark:30000, web:100000</span>
+  <span class="prop">maxConcurrentProcesses</span>: <span class="tp">number</span>;               <span class="cm">// default: 5</span>
+}</pre>
+      </div>
+    </details>
+
+    <details>
+      <summary>Stream Event Types</summary>
+      <div class="details-body">
+<pre><span class="cm">// Claude Code stream-json output (NDJSON)</span>
+
+<span class="kw">interface</span> <span class="tp">StreamInitEvent</span> {
+  <span class="prop">type</span>: <span class="str">"system"</span>;
+  <span class="prop">subtype</span>: <span class="str">"init"</span>;
+  <span class="prop">session_id</span>: <span class="tp">string</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">StreamAssistantEvent</span> {
+  <span class="prop">type</span>: <span class="str">"assistant"</span>;
+  <span class="prop">message</span>: {
+    <span class="prop">content</span>: <span class="tp">Array&lt;
+      | { type: "text"; text: string }
+      | { type: "tool_use"; name: string; input: any }
+    &gt;</span>;
+  };
+}
+
+<span class="kw">interface</span> <span class="tp">StreamResultEvent</span> {
+  <span class="prop">type</span>: <span class="str">"result"</span>;
+  <span class="prop">subtype</span>: <span class="str">"success"</span> | <span class="str">"error"</span>;
+  <span class="prop">result</span>: <span class="tp">string</span>;
+  <span class="prop">session_id</span>: <span class="tp">string</span>;
+  <span class="prop">usage</span>?: {
+    <span class="prop">input_tokens</span>: <span class="tp">number</span>;
+    <span class="prop">output_tokens</span>: <span class="tp">number</span>;
+    <span class="prop">cache_read_input_tokens</span>?: <span class="tp">number</span>;
+    <span class="prop">cache_creation_input_tokens</span>?: <span class="tp">number</span>;
+  };
+}</pre>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="message-flow">
+  <h2>Message Flow <span class="badge">End to End</span></h2>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant A as Adapter
+    participant R as Router
+    participant SM as SessionManager
+    participant CC as Claude Code
+    participant F as Formatter
+    participant DB as SQLite
+
+    U->>A: Send message
+    A->>A: Construct IncomingMessage
+    A->>R: getProject(channelId, platform)
+    R-->>A: ProjectConfig
+
+    alt Management command (/im-*)
+        A->>R: parseManagementCommand()
+        R-->>A: {command, args}
+        A->>A: Execute command
+    else Normal message
+        alt No threadId (new conversation)
+            A->>A: createThread()
+            A->>A: generateThreadTitle() [async]
+        end
+        A->>DB: saveMessage(userMsg)
+        A->>DB: upsertThread()
+        A->>A: sendMessage("⏳ Thinking...")
+        A->>SM: invoke(threadKey, dir, sessionId, message)
+
+        SM->>SM: Queue if thread busy
+        SM->>SM: Wait for concurrency slot
+        SM->>CC: spawn(claude --resume sessionId -p message)
+
+        loop Stream events (NDJSON stdout)
+            CC->>SM: StreamInitEvent → capture session_id
+            CC->>SM: StreamAssistantEvent → text/tool_use blocks
+            SM->>A: onEvent callback
+            A->>A: Accumulate bufferedText
+            A->>A: Track tool activities
+        end
+
+        Note over A: Every N ms (100ms web, 3s discord)
+        A->>A: editMessage(bufferedText + status)
+
+        CC->>SM: StreamResultEvent → final text + tokens
+        SM-->>A: SessionResult
+
+        A->>F: extractReactions(result.text)
+        F-->>A: {cleanText, reactions}
+        A->>F: formatOutput(cleanText, platform)
+        F-->>A: {messages[], attachments[]}
+        A->>F: extractImages(cleanText, projectDir)
+        F-->>A: image Attachment[]
+
+        A->>A: editMessage(final formatted text)
+        loop Additional chunks (if split)
+            A->>A: sendMessage(chunk)
+        end
+        loop Attachments
+            A->>A: uploadFile(attachment)
+        end
+        loop Reactions
+            A->>A: addReaction(emoji)
+        end
+
+        A->>DB: saveMessage(botMsg + tokens)
+        A->>DB: upsertThread(sessionId)
+    end
+    </pre>
+  </div>
+
+  <h3>Step-by-Step Breakdown</h3>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-content">
+        <strong>Receive</strong>
+        <p>Adapter receives platform event → constructs <code>IncomingMessage</code> with normalized fields (platform, channelId, threadId, content, attachments)</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-content">
+        <strong>Route</strong>
+        <p>Router maps <code>{platform}:{channelId}</code> → project config. Checks for <code>/im-*</code> management commands. Returns <code>null</code> if channel not registered.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-content">
+        <strong>Thread</strong>
+        <p>If <code>threadId</code> is null, create a new thread via adapter. For Discord: creates channel thread. For Web: generates <code>wb_project:timestamp</code>. Sets fallback title from first 30 chars, then async generates a better title via Claude (haiku model).</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-content">
+        <strong>Persist</strong>
+        <p>Save user message to DB. Create/update thread record. Send initial "⏳ Thinking..." indicator to user (or "⏳ 请稍等..." if thread is busy).</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-content">
+        <strong>Invoke</strong>
+        <p>SessionManager queues if thread busy, waits for concurrency slot (max 5 processes), then spawns <code>claude --print --output-format stream-json --resume {sessionId} -p {message}</code>. Attaches image paths if present.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-content">
+        <strong>Stream</strong>
+        <p>Reads stdout line by line (NDJSON). Parses <code>StreamInitEvent</code> (captures session_id), <code>StreamAssistantEvent</code> (text blocks + tool_use tracking), <code>StreamResultEvent</code> (final text + tokens). Calls <code>onEvent</code> callback for each.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">7</div>
+      <div class="flow-content">
+        <strong>Live Update</strong>
+        <p>CLI's <code>handleMessage</code> accumulates <code>bufferedText</code> and activity log. A <code>setInterval</code> timer (100ms web, 3s Discord) calls <code>editMessage</code> to update the "Thinking..." message with current text + activity footer.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">8</div>
+      <div class="flow-content">
+        <strong>Format & Deliver</strong>
+        <p>Formatter extracts <code>[react:emoji]</code> patterns, splits text by platform limit, detects referenced image paths, creates file attachments for oversized output. Final message gets "✅ done [elapsed]" footer.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="adapters">
+  <h2>Platform Adapters <span class="badge">cli/src/adapters</span></h2>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#5865F2"></span> DiscordAdapter</div>
+      <table>
+        <tr><td>SDK</td><td><code>discord.js</code> v14</td></tr>
+        <tr><td>Connection</td><td>Bot Gateway (WebSocket)</td></tr>
+        <tr><td>Channels</td><td>Creates <code>cc2im-{project}</code> text channel per project</td></tr>
+        <tr><td>Threads</td><td>Discord thread from first message</td></tr>
+        <tr><td>Max length</td><td>2,000 chars</td></tr>
+        <tr><td>Extras</td><td>Slash commands, reactions, file upload</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#2D60F5"></span> LarkAdapter</div>
+      <table>
+        <tr><td>SDK</td><td><code>@larksuiteoapi/node-sdk</code></td></tr>
+        <tr><td>Connection</td><td>Lark WebSocket client</td></tr>
+        <tr><td>Channels</td><td>Creates group chats per project</td></tr>
+        <tr><td>Threads</td><td>Lark message threads (reply chains)</td></tr>
+        <tr><td>Max length</td><td>30,000 chars</td></tr>
+        <tr><td>Extras</td><td>Owner init (<code>/im-init</code>), member management</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:var(--cyan)"></span> WebAdapter</div>
+      <table>
+        <tr><td>Server</td><td><code>http.createServer</code> + <code>ws</code></td></tr>
+        <tr><td>Connection</td><td>WebSocket (<code>/ws</code>) + REST API (<code>/api/*</code>)</td></tr>
+        <tr><td>Channels</td><td><code>wb_{projectName}</code></td></tr>
+        <tr><td>Threads</td><td><code>wb_{project}:{timestamp}</code></td></tr>
+        <tr><td>Max length</td><td>100,000 chars</td></tr>
+        <tr><td>Extras</td><td>Subscribe, stream recovery, abort, static file serving</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <details>
+    <summary>WebAdapter Internals</summary>
+    <div class="details-body">
+      <div class="mermaid-wrapper">
+        <pre class="mermaid">
+graph TB
+  subgraph "WebAdapter"
+    HTTP["HTTP Server"]
+    WSS["WebSocket Server /ws"]
+    SF["serveStatic()"]
+    API["handleApi() from @cc2im/server"]
+
+    SUBS["subscriptions<br>Map&lt;threadId, Set&lt;WS&gt;&gt;"]
+    BUF["streamBuffers<br>Map&lt;threadId, string&gt;"]
+    MTM["messageThreadMap<br>Map&lt;msgId, threadId&gt;"]
+  end
+
+  HTTP -->|"/api/*"| API
+  HTTP -->|"other"| SF
+  WSS -->|"chat.send"| MH["messageHandler"]
+  WSS -->|"chat.subscribe"| SUBS
+  WSS -->|"chat.abort"| AH["abortHandler"]
+
+  MH -->|"auto-subscribe sender"| SUBS
+
+  style SUBS fill:#4cc9f033,stroke:#4cc9f0,color:#4cc9f0
+  style BUF fill:#34d39933,stroke:#34d399,color:#34d399
+  style MTM fill:#a78bfa33,stroke:#a78bfa,color:#a78bfa
+        </pre>
+      </div>
+      <p><strong>Key methods beyond PlatformAdapter:</strong></p>
+      <table>
+        <tr><th>Method</th><th>Purpose</th></tr>
+        <tr><td><code>onAbort(handler)</code></td><td>Register abort callback → <code>sessionManager.abort(threadKey)</code></td></tr>
+        <tr><td><code>sendDone(threadId, tokens)</code></td><td>Broadcast <code>chat.done</code> + clear stream buffer</td></tr>
+        <tr><td><code>sendSessionUpdate(project, threadId, name)</code></td><td>Broadcast <code>session.update</code> to all clients (sidebar)</td></tr>
+        <tr><td><code>sendError(threadId, error)</code></td><td>Broadcast <code>chat.error</code> + clear stream buffer</td></tr>
+        <tr><td><code>sendToThread(threadId, msg)</code></td><td>Send to subscribers only, fallback to broadcast</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="session">
+  <h2>SessionManager <span class="badge">core/src/session.ts</span></h2>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+stateDiagram-v2
+    [*] --> Queued : invoke() called
+    Queued --> WaitingSlot : thread not busy
+    Queued --> Queued : thread busy (await queue)
+    WaitingSlot --> Running : concurrency slot available
+    WaitingSlot --> WaitingSlot : all slots full (poll 500ms)
+    Running --> Done : process exits code 0
+    Running --> Error : process exits non-0 / no output
+    Running --> Aborted : abort(sessionId) → SIGTERM
+    Done --> [*] : resolve SessionResult
+    Error --> [*] : reject Error
+    Aborted --> [*] : reject Error
+
+    note right of Running
+      Active: Map&lt;threadKey, ChildProcess&gt;
+      Max concurrent: formatterConfig.maxConcurrentProcesses (default 5)
+    end note
+    </pre>
+  </div>
+
+  <details>
+    <summary>SessionResult</summary>
+    <div class="details-body">
+<pre><span class="kw">interface</span> <span class="tp">SessionResult</span> {
+  <span class="prop">sessionId</span>: <span class="tp">string</span>;             <span class="cm">// Claude Code session ID for --resume</span>
+  <span class="prop">text</span>: <span class="tp">string</span>;                  <span class="cm">// Final response text</span>
+  <span class="prop">success</span>: <span class="tp">boolean</span>;
+  <span class="prop">inputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">outputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheReadTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheCreationTokens</span>: <span class="tp">number</span>;
+}</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Concurrency & Queue Logic</summary>
+    <div class="details-body">
+      <p>Each thread has its own FIFO queue. When <code>invoke()</code> is called:</p>
+      <ol style="color:var(--text-muted);font-size:14px;padding-left:20px;">
+        <li>If queue exists for this <code>threadKey</code> → push to queue, await</li>
+        <li>When dequeued (or no queue) → wait for <code>active.size < maxConcurrentProcesses</code></li>
+        <li>Call <code>onStart()</code> callback → spawn process</li>
+        <li>On process close → shift next from queue, or delete queue</li>
+      </ol>
+      <p>This ensures messages to the same thread are processed sequentially, while different threads run in parallel up to the concurrency limit.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Process Spawn Details</summary>
+    <div class="details-body">
+<pre><span class="fn">spawn</span>(<span class="prop">claudeConfig.command</span>, [
+  <span class="str">"--print"</span>,
+  <span class="str">"--output-format"</span>, <span class="str">"stream-json"</span>,
+  <span class="str">"--model"</span>, model,
+  <span class="str">"--resume"</span>, sessionId,  <span class="cm">// omitted for new sessions</span>
+  <span class="str">"-p"</span>, fullMessage,
+], {
+  <span class="prop">cwd</span>: projectDir,
+  <span class="prop">env</span>: { ...process.env, <span class="prop">CLAUDECODE</span>: <span class="kw">undefined</span> },
+  <span class="prop">stdio</span>: [<span class="str">"ignore"</span>, <span class="str">"pipe"</span>, <span class="str">"pipe"</span>],
+});</pre>
+      <p>Stdout is read via <code>readline</code> interface, each line parsed as JSON (<code>StreamEvent</code>). Stderr is accumulated for error reporting.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="router">
+  <h2>Router <span class="badge">core/src/router.ts</span></h2>
+
+  <div class="card">
+    <p>Maps <code>{platform}:{channelId}</code> → project name. Registered at startup when adapters call <code>setupProject()</code>.</p>
+    <table>
+      <tr><th>Platform</th><th>channelId Format</th><th>Router Key Example</th></tr>
+      <tr><td><span class="tag tag-purple">Discord</span></td><td>Discord channel ID</td><td><code>discord:1234567890</code></td></tr>
+      <tr><td><span class="tag tag-cyan">Lark</span></td><td>Lark chat ID</td><td><code>lark:oc_xxxxx</code></td></tr>
+      <tr><td><span class="tag tag-green">Web</span></td><td><code>wb_{projectName}</code></td><td><code>web:wb_myproject</code></td></tr>
+    </table>
+  </div>
+
+  <details>
+    <summary>Management Commands</summary>
+    <div class="details-body">
+      <table>
+        <tr><th>Command</th><th>Action</th></tr>
+        <tr><td><code>/im-list-projects</code></td><td>List all configured projects</td></tr>
+        <tr><td><code>/im-add-project &lt;name&gt; &lt;dir&gt;</code></td><td>Add project, create channel, save config</td></tr>
+        <tr><td><code>/im-remove-project &lt;name&gt;</code></td><td>Remove project from config</td></tr>
+        <tr><td><code>/im-reload-config</code></td><td>Hot-reload config file</td></tr>
+        <tr><td><code>/im-done</code></td><td>Mark thread as completed ✅</td></tr>
+        <tr><td><code>/im-reopen</code></td><td>Reopen completed thread 🔄</td></tr>
+        <tr><td><code>/im-init</code></td><td>Lark only: save owner ID, add to project groups</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="formatter">
+  <h2>Formatter <span class="badge">core/src/formatter.ts</span></h2>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+flowchart LR
+    Input["Claude response text"] --> ER["extractReactions()"]
+    ER -->|cleanText| FO["formatOutput()"]
+    ER -->|reactions: string[]| React["addReaction per emoji"]
+    FO --> Check{text.length}
+    Check -->|"≤ maxLen"| Single["[text]"]
+    Check -->|"≤ maxLen × 5"| Split["splitText() → [1/N], [2/N], ..."]
+    Check -->|"> maxLen × 5"| Summary["generateSummary() + full-output.md attachment"]
+
+    Input --> EI["extractImages()"]
+    EI -->|match image paths| Attach["Attachment[] for upload"]
+
+    style ER fill:#4cc9f033,stroke:#4cc9f0,color:#4cc9f0
+    style FO fill:#34d39933,stroke:#34d399,color:#34d399
+    style EI fill:#fb923c33,stroke:#fb923c,color:#fb923c
+    </pre>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">splitText Logic</div>
+      <p>Splits at natural boundaries: newlines first, then spaces, then hard break. Each chunk gets <code>[i/N]</code> prefix. Reserves 12 chars for the prefix.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Reaction Extraction</div>
+      <p>Strips <code>[react:emoji]</code> patterns from the end of text. Multiple reactions supported. Returns cleaned text + array of emoji strings.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="store">
+  <h2>Database Schema <span class="badge">SQLite + WAL</span></h2>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+erDiagram
+    threads {
+        text thread_id PK
+        text platform PK
+        text channel_id
+        text session_id
+        text project_name
+        text status "active | done | archived"
+        text name
+        datetime created_at
+    }
+
+    messages {
+        text message_id PK
+        text platform PK
+        text thread_id FK
+        boolean is_bot
+        text content_summary
+        integer input_tokens
+        integer output_tokens
+        integer cache_read_tokens
+        integer cache_creation_tokens
+        text model
+        datetime created_at
+    }
+
+    pending_restarts {
+        text thread_id PK
+        text platform PK
+        datetime created_at
+    }
+
+    threads ||--o{ messages : "thread_id + platform"
+    threads ||--o| pending_restarts : "thread_id + platform"
+    </pre>
+  </div>
+
+  <details open>
+    <summary>Store API</summary>
+    <div class="details-body">
+      <table>
+        <tr><th>Method</th><th>SQL</th></tr>
+        <tr><td><code>upsertThread()</code></td><td><code>INSERT ... ON CONFLICT DO UPDATE SET session_id, name</code></td></tr>
+        <tr><td><code>getThread()</code></td><td><code>SELECT * WHERE thread_id=? AND platform=?</code></td></tr>
+        <tr><td><code>updateThreadStatus()</code></td><td><code>UPDATE SET status=?</code></td></tr>
+        <tr><td><code>archiveThread()</code></td><td><code>UPDATE SET status='archived'</code></td></tr>
+        <tr><td><code>deleteThread()</code></td><td><code>DELETE messages + DELETE thread</code></td></tr>
+        <tr><td><code>saveMessage()</code></td><td><code>INSERT OR REPLACE</code> with token counts</td></tr>
+        <tr><td><code>getSessionTokens()</code></td><td><code>SUM(tokens) WHERE thread_id=? AND is_bot=1</code></td></tr>
+        <tr><td><code>getProjectTokens()</code></td><td><code>SUM(tokens) JOIN threads WHERE project_name=?</code></td></tr>
+        <tr><td><code>getDailyTokens()</code></td><td><code>GROUP BY DATE(created_at), model</code></td></tr>
+        <tr><td><code>getOverviewTokens()</code></td><td><code>GROUP BY thread_id, platform</code> with optional <code>since</code> filter</td></tr>
+        <tr><td><code>markPendingRestart()</code></td><td><code>INSERT OR IGNORE</code> into pending_restarts</td></tr>
+        <tr><td><code>getPendingRestarts()</code></td><td><code>JOIN threads</code> on pending_restarts</td></tr>
+        <tr><td><code>listSessions()</code></td><td>List threads, optional project filter, excludes archived by default</td></tr>
+      </table>
+      <p style="margin-top:8px"><strong>Indexes:</strong> <code>idx_messages_thread(thread_id, platform)</code>, <code>idx_threads_project(project_name, status)</code></p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="websocket">
+  <h2>WebSocket Protocol <span class="badge">Client ↔ Server</span></h2>
+
+  <h3>Client → Server</h3>
+  <table>
+    <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
+    <tr>
+      <td><code>chat.send</code></td>
+      <td><code>project, message, threadKey?, sessionId?, model?</code></td>
+      <td>Send a message. Auto-subscribes sender to thread events.</td>
+    </tr>
+    <tr>
+      <td><code>chat.subscribe</code></td>
+      <td><code>threadKey</code></td>
+      <td>Subscribe to thread events. If stream active, receive <code>chat.recover</code>.</td>
+    </tr>
+    <tr>
+      <td><code>chat.abort</code></td>
+      <td><code>threadKey</code></td>
+      <td>Abort active Claude process for thread (SIGTERM).</td>
+    </tr>
+    <tr>
+      <td><code>sync.state</code></td>
+      <td><em>none</em></td>
+      <td>Request current state. Sent automatically on connect.</td>
+    </tr>
+  </table>
+
+  <h3>Server → Client</h3>
+  <table>
+    <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
+    <tr>
+      <td><code>chat.message</code></td>
+      <td><code>threadId, messageId, content</code></td>
+      <td>New message (initial "Thinking..." or additional chunks)</td>
+    </tr>
+    <tr>
+      <td><code>chat.update</code></td>
+      <td><code>threadId, messageId, content</code></td>
+      <td>Streaming update — replaces message content with latest text + status</td>
+    </tr>
+    <tr>
+      <td><code>chat.done</code></td>
+      <td><code>threadId, tokens: TokenStats</code></td>
+      <td>Stream complete. Clears stream buffer.</td>
+    </tr>
+    <tr>
+      <td><code>chat.error</code></td>
+      <td><code>threadId, error: {code, message}</code></td>
+      <td>Error during processing. Clears stream buffer.</td>
+    </tr>
+    <tr>
+      <td><code>chat.file</code></td>
+      <td><code>threadId, filename, content (base64)</code></td>
+      <td>File attachment (image or text export)</td>
+    </tr>
+    <tr>
+      <td><code>chat.recover</code></td>
+      <td><code>threadId, content</code></td>
+      <td>Sent on subscribe if active stream — full buffered content for recovery</td>
+    </tr>
+    <tr>
+      <td><code>session.update</code></td>
+      <td><code>project, threadKey, name</code></td>
+      <td>Broadcast to all clients — sidebar refresh (new/renamed session)</td>
+    </tr>
+    <tr>
+      <td><code>sync.state</code></td>
+      <td><code>activeSessions[], bufferedOutput</code></td>
+      <td>Response to sync request</td>
+    </tr>
+    <tr>
+      <td><code>error</code></td>
+      <td><code>error: {code, message}</code></td>
+      <td>Protocol error (INVALID_JSON, UNKNOWN_TYPE)</td>
+    </tr>
+  </table>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+sequenceDiagram
+    participant C as Client (Browser)
+    participant W as WebAdapter
+
+    C->>W: connect /ws
+    C->>W: sync.state
+    W-->>C: sync.state {activeSessions, bufferedOutput}
+
+    C->>W: chat.send {project, message, threadKey}
+    Note over W: auto-subscribe client to threadKey
+    W-->>C: chat.message {threadId, "⏳ Thinking..."}
+
+    loop Every 100ms
+        W-->>C: chat.update {threadId, bufferedText + status}
+    end
+
+    W-->>C: chat.done {threadId, tokens}
+    W-->>C: session.update {project, threadKey, name}
+
+    Note over C,W: --- Client reconnects ---
+    C->>W: connect /ws
+    C->>W: chat.subscribe {threadKey}
+    W-->>C: chat.recover {threadId, bufferedContent}
+    </pre>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="ui">
+  <h2>UI Architecture <span class="badge">SvelteKit 5 + shadcn-svelte</span></h2>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Routes</div>
+      <table>
+        <tr><td><code>/</code></td><td>Redirect → <code>/chat</code></td></tr>
+        <tr><td><code>/chat</code></td><td>Project list</td></tr>
+        <tr><td><code>/chat/[project]</code></td><td>Session list for project</td></tr>
+        <tr><td><code>/chat/[project]/[session]</code></td><td>Chat conversation</td></tr>
+        <tr><td><code>/stats</code></td><td>Token usage dashboard</td></tr>
+        <tr><td><code>/config</code></td><td>Configuration editor</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Stores</div>
+      <table>
+        <tr><td><code>connection.ts</code></td><td>WS lifecycle, auto-reconnect (0/1/2/4s → 30s), message queue, event dispatch</td></tr>
+        <tr><td><code>chat.ts</code></td><td>Session state (Map&lt;sessKey, Session&gt;), message arrays, thread key mapping, send/receive handlers</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <details>
+    <summary>Connection Store — Reconnect Logic</summary>
+    <div class="details-body">
+<pre><span class="cm">// Exponential backoff: 0ms → 1s → 2s → 4s → 30s (cap)</span>
+<span class="kw">const</span> <span class="prop">delays</span> = [<span class="num">0</span>, <span class="num">1000</span>, <span class="num">2000</span>, <span class="num">4000</span>];
+<span class="kw">const</span> <span class="prop">delay</span> = delays[reconnectAttempt] ?? <span class="num">30000</span>;
+
+<span class="cm">// On open: reset attempt counter, send sync.state, flush pending queue</span>
+<span class="cm">// On close: schedule reconnect</span>
+<span class="cm">// Messages sent while disconnected are queued in pendingQueue[]</span></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Chat Store — Session Lifecycle</summary>
+    <div class="details-body">
+      <div class="mermaid-wrapper">
+        <pre class="mermaid">
+stateDiagram-v2
+    [*] --> NewSession : sendMessage("proj", "hello")
+    NewSession --> Streaming : chat.message received
+    Streaming --> Streaming : chat.update (replace content)
+    Streaming --> Complete : chat.done
+    Streaming --> Error : chat.error
+    Complete --> Streaming : user sends another message
+
+    note right of NewSession
+      sessKey = "new-{project}" (temp)
+      threadKey = "wb_{project}:{timestamp}"
+      threadKeyMap[threadKey] = sessKey
+    end note
+
+    note right of Complete
+      sessKey rekeyed to threadKey
+      on first chat.message response
+    end note
+        </pre>
+      </div>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="config">
+  <h2>Configuration <span class="badge">YAML + Env Vars</span></h2>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">config.yaml</div>
+<pre><span class="prop">discord</span>:
+  <span class="prop">token</span>: <span class="str">"bot-token"</span>
+<span class="prop">lark</span>:
+  <span class="prop">appId</span>: <span class="str">"cli_xxx"</span>
+  <span class="prop">appSecret</span>: <span class="str">"secret"</span>
+  <span class="prop">ownerOpenId</span>: <span class="str">"ou_xxx"</span>
+<span class="prop">projects</span>:
+  - <span class="prop">name</span>: <span class="str">"my-proj"</span>
+    <span class="prop">directory</span>: <span class="str">"/path/to/proj"</span>
+    <span class="prop">model</span>: <span class="str">"sonnet"</span>
+    <span class="prop">platforms</span>:
+      <span class="prop">discord</span>: <span class="kw">true</span>
+      <span class="prop">lark</span>: <span class="kw">false</span>
+      <span class="prop">web</span>: <span class="kw">true</span>
+<span class="prop">claude</span>:
+  <span class="prop">command</span>: <span class="str">"claude"</span>
+  <span class="prop">defaultArgs</span>:
+    - <span class="str">"--print"</span>
+    - <span class="str">"--output-format"</span>
+    - <span class="str">"stream-json"</span>
+    - <span class="str">"--model"</span>
+    - <span class="str">"sonnet"</span>
+  <span class="prop">bufferInterval</span>: <span class="num">500</span>
+  <span class="prop">timeout</span>: <span class="num">300000</span>
+<span class="prop">formatter</span>:
+  <span class="prop">maxMessageLength</span>:
+    <span class="prop">discord</span>: <span class="num">2000</span>
+    <span class="prop">lark</span>: <span class="num">30000</span>
+    <span class="prop">web</span>: <span class="num">100000</span>
+  <span class="prop">maxConcurrentProcesses</span>: <span class="num">5</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Environment Overrides</div>
+      <table>
+        <tr><th>Env Var</th><th>Overrides</th></tr>
+        <tr><td><code>CC2IM_CONFIG</code></td><td>Config file path</td></tr>
+        <tr><td><code>CC2IM_DB</code></td><td>Database file path</td></tr>
+        <tr><td><code>DISCORD_TOKEN</code></td><td><code>discord.token</code></td></tr>
+        <tr><td><code>LARK_APP_ID</code></td><td><code>lark.appId</code></td></tr>
+        <tr><td><code>LARK_APP_SECRET</code></td><td><code>lark.appSecret</code></td></tr>
+        <tr><td><code>LARK_OWNER_OPEN_ID</code></td><td><code>lark.ownerOpenId</code></td></tr>
+      </table>
+      <p style="margin-top:12px"><strong>Config search order:</strong></p>
+      <ol style="color:var(--text-muted);font-size:13px;padding-left:20px;line-height:2">
+        <li><code>CC2IM_CONFIG</code> env var</li>
+        <li><code>--config</code> CLI flag</li>
+        <li><code>~/.config/cc2im/config.yaml</code></li>
+        <li><code>./config.yaml</code></li>
+      </ol>
+      <p style="margin-top:12px"><strong>Secret handling on save:</strong> If a secret came from env var, it's saved as empty string to avoid leaking into the YAML file.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="cli">
+  <h2>CLI Entry Point <span class="badge">cli/src/index.ts</span></h2>
+
+  <div class="mermaid-wrapper">
+    <pre class="mermaid">
+flowchart TB
+    Start["main()"] --> LoadConfig["loadConfig(path)"]
+    LoadConfig --> InitDB["new Store(dbPath)"]
+    InitDB --> InitManagers["SessionManager + Formatter + Router"]
+    InitManagers --> InitAdapters
+
+    subgraph InitAdapters["Initialize Adapters"]
+      direction TB
+      DC{discord.token?}
+      DC -->|yes| DA["new DiscordAdapter"]
+      LC{lark.appId?}
+      LC -->|yes| LA["new LarkAdapter"]
+      WC{webPort?}
+      WC -->|yes| WA["new WebAdapter + onAbort"]
+    end
+
+    InitAdapters --> StartLoop
+
+    subgraph StartLoop["For each adapter"]
+      direction TB
+      AS["adapter.start()"]
+      SP["setupProject() for each project"]
+      RC["router.registerChannel()"]
+      OM["adapter.onMessage(handleMessage)"]
+      OR["adapter.onReaction(handleReaction)"]
+      AS --> SP --> RC --> OM --> OR
+    end
+
+    StartLoop --> Ready["cc2im ready"]
+    Ready --> Recovery["Recover pending restarts"]
+    Recovery --> Shutdown["Register SIGINT/SIGTERM handlers"]
+
+    style Start fill:#4cc9f033,stroke:#4cc9f0,color:#4cc9f0
+    style Ready fill:#34d39933,stroke:#34d399,color:#34d399
+    </pre>
+  </div>
+
+  <details>
+    <summary>Graceful Shutdown</summary>
+    <div class="details-body">
+      <ol style="color:var(--text-muted);font-size:14px;padding-left:20px;line-height:2">
+        <li>Mark active threads as pending restart in DB</li>
+        <li><code>sessionManager.abortAll()</code> — SIGTERM all Claude processes</li>
+        <li><code>adapter.stop()</code> for each adapter</li>
+        <li><code>store.close()</code></li>
+        <li><code>process.exit(0)</code></li>
+      </ol>
+    </div>
+  </details>
+
+  <details>
+    <summary>Pending Restart Recovery</summary>
+    <div class="details-body">
+      <p>On startup, loads pending restarts from DB, clears the table, then for each thread:</p>
+      <ol style="color:var(--text-muted);font-size:14px;padding-left:20px;line-height:2">
+        <li>Find adapter + project config</li>
+        <li>Call <code>sessionManager.invoke()</code> with resume message</li>
+        <li>On success: update thread, send response to user</li>
+        <li>On failure: retry once after 3s</li>
+        <li>On second failure: mark thread as <code>done</code>, send error message to user</li>
+      </ol>
+    </div>
+  </details>
+
+  <details>
+    <summary>AskUserQuestion Interception</summary>
+    <div class="details-body">
+      <p>When Claude Code uses the <code>AskUserQuestion</code> tool during a session:</p>
+      <ol style="color:var(--text-muted);font-size:14px;padding-left:20px;line-height:2">
+        <li>Stream callback detects <code>tool_use</code> block with <code>name === "AskUserQuestion"</code></li>
+        <li>Questions stored in <code>lastAskQuestions</code></li>
+        <li>After invoke completes, format questions and send to user</li>
+        <li>Add entry to <code>pendingAsks</code> Map with a Promise resolve</li>
+        <li>Next message from user in same thread resolves the promise</li>
+        <li>Parse answer (letter combos like "AB" or full text)</li>
+        <li>Re-invoke Claude with <code>--resume</code> + user's answer</li>
+      </ol>
+    </div>
+  </details>
+
+  <details>
+    <summary>Service Management (cli.ts + service.ts)</summary>
+    <div class="details-body">
+      <table>
+        <tr><th>Command</th><th>Action</th></tr>
+        <tr><td><code>cc2im install</code></td><td>Generate systemd unit / launchd plist, enable + start</td></tr>
+        <tr><td><code>cc2im uninstall</code></td><td>Stop, disable, remove unit/plist</td></tr>
+        <tr><td><code>cc2im start|stop|restart</code></td><td>systemctl / launchctl control</td></tr>
+        <tr><td><code>cc2im status</code></td><td>Show service status</td></tr>
+        <tr><td><code>cc2im logs</code></td><td>journalctl / log file tail</td></tr>
+        <tr><td><code>cc2im run</code></td><td>Run in foreground (dev mode)</td></tr>
+        <tr><td><code>cc2im web</code></td><td>Start with web UI on specified port</td></tr>
+      </table>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="api">
+  <h2>REST API <span class="badge">server/src/api.ts</span></h2>
+
+  <table>
+    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/config</code></td><td>Returns config with secrets masked (<code>***</code>)</td></tr>
+    <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/config</code></td><td>Update config (allowlisted keys only, preserves masked secrets)</td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/projects</code></td><td>List all projects</td></tr>
+    <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/projects</code></td><td>Add project (requires name + directory)</td></tr>
+    <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/projects/:name</code></td><td>Update project settings</td></tr>
+    <tr><td><span class="tag tag-red">DELETE</span></td><td><code>/api/projects/:name</code></td><td>Remove project (idempotent, 204)</td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sessions</code></td><td>List sessions, optional <code>?project=</code> filter</td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sessions/:id/messages</code></td><td>Get messages for a session</td></tr>
+    <tr><td><span class="tag tag-orange">PATCH</span></td><td><code>/api/sessions/:id/archive</code></td><td>Archive a session (204)</td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/stats/tokens</code></td><td>Token stats by <code>?project=</code> or <code>?session=</code></td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/stats/overview</code></td><td>Overview: per-project per-session totals, <code>?window=24h|7d|all</code></td></tr>
+    <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/claude/test</code></td><td>Verify Claude CLI works (runs <code>claude --print-system-prompt</code>)</td></tr>
+  </table>
+
+  <details>
+    <summary>Security Notes</summary>
+    <div class="details-body">
+      <ul style="color:var(--text-muted);font-size:14px;padding-left:20px;line-height:2">
+        <li><strong>Secret masking:</strong> <code>GET /api/config</code> masks <code>discord.token</code> and <code>lark.appSecret</code> as <code>***</code></li>
+        <li><strong>Secret preservation:</strong> <code>PUT /api/config</code> keeps original secrets when incoming value is <code>***</code> or absent</li>
+        <li><strong>Body size limit:</strong> 1 MB max request body</li>
+        <li><strong>Prototype pollution prevention:</strong> Only allowlisted keys (<code>discord, lark, projects, claude, formatter</code>) are applied</li>
+        <li><strong>Path traversal protection:</strong> Static file serving validates resolved path stays within static dir</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+</div>
+
+<div style="text-align:center;padding:48px 0;border-top:1px solid var(--border);color:var(--text-dim);font-size:13px;">
+  Generated from cc2im source code &mdash; <span id="date"></span>
+</div>
+
+<script>
+  document.getElementById('date').textContent = new Date().toISOString().split('T')[0];
+  mermaid.initialize({
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#4cc9f033',
+      primaryTextColor: '#fafafa',
+      primaryBorderColor: '#4cc9f0',
+      lineColor: '#3f3f46',
+      secondaryColor: '#27272a',
+      tertiaryColor: '#18181b',
+      fontSize: '13px',
+    },
+    flowchart: { curve: 'basis' },
+    sequence: { mirrorActors: false },
+  });
+</script>
+
+</body>
+</html>

@@ -196,18 +196,16 @@ export class Store {
     this.db.prepare("DELETE FROM pending_restarts").run();
   }
 
-  listSessions(projectName?: string, includeArchived = false): ThreadRow[] {
-    const statusFilter = includeArchived ? "" : "status != 'archived'";
-    if (projectName) {
-      const where = statusFilter ? `project_name = ? AND ${statusFilter}` : "project_name = ?";
-      return this.db.prepare(
-        `SELECT * FROM threads WHERE ${where} ORDER BY created_at DESC`
-      ).all(projectName) as ThreadRow[];
-    }
-    const where = statusFilter ? `WHERE ${statusFilter}` : "";
+  listSessions(projectName?: string, includeArchived = false, platform?: Platform): ThreadRow[] {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (projectName) { conditions.push("project_name = ?"); params.push(projectName); }
+    if (platform) { conditions.push("platform = ?"); params.push(platform); }
+    if (!includeArchived) { conditions.push("status != 'archived'"); }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     return this.db.prepare(
       `SELECT * FROM threads ${where} ORDER BY created_at DESC`
-    ).all() as ThreadRow[];
+    ).all(...params) as ThreadRow[];
   }
 
   /** Aggregate tokens for a thread (by thread_id) from bot messages */
@@ -276,6 +274,14 @@ export class Store {
       ORDER BY t.project_name, SUM(m.input_tokens + m.output_tokens) DESC
     `;
     return this.db.prepare(sql).all(since, since) as OverviewTokenRow[];
+  }
+
+  /** Get the latest channel_id for a project on a platform (from threads table) */
+  getLatestChannelId(platform: Platform, projectName: string): string | null {
+    const row = this.db.prepare(
+      "SELECT channel_id FROM threads WHERE platform = ? AND project_name = ? ORDER BY created_at DESC LIMIT 1"
+    ).get(platform, projectName) as { channel_id: string } | undefined;
+    return row?.channel_id ?? null;
   }
 
   close(): void {

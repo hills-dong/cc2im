@@ -8,6 +8,11 @@ let ws: WebSocket | null = null;
 let reconnectAttempt = 0;
 const MAX_RECONNECT_DELAY = 30000;
 const handlers = new Map<string, Set<(data: any) => void>>();
+// Queue messages sent before WebSocket is ready
+const pendingQueue: unknown[] = [];
+// Callbacks invoked on reconnect (not first connect)
+const reconnectCallbacks = new Set<() => void>();
+let hasConnectedOnce = false;
 
 export function on(type: string, handler: (data: any) => void): () => void {
   if (!handlers.has(type)) handlers.set(type, new Set());
@@ -27,6 +32,15 @@ export function connect(url: string): void {
     connectionStatus.set("connected");
     reconnectAttempt = 0;
     send({ type: "sync.state" });
+    // Flush any messages queued while disconnected
+    while (pendingQueue.length > 0) {
+      send(pendingQueue.shift());
+    }
+    // Re-subscribe to active threads after reconnect
+    if (hasConnectedOnce) {
+      for (const cb of reconnectCallbacks) cb();
+    }
+    hasConnectedOnce = true;
     // Expose for E2E testing
     (globalThis as any).__ws = ws;
   };
@@ -42,9 +56,18 @@ export function connect(url: string): void {
   };
 }
 
+/** Register a callback to run on WebSocket reconnection (not first connect) */
+export function onReconnect(cb: () => void): () => void {
+  reconnectCallbacks.add(cb);
+  return () => reconnectCallbacks.delete(cb);
+}
+
 export function send(data: unknown): void {
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
+  } else {
+    // Queue for delivery once connected
+    pendingQueue.push(data);
   }
 }
 

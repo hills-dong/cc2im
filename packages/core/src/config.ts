@@ -22,6 +22,10 @@ export function loadConfig(path: string): AppConfig {
     if (!parsed.lark) parsed.lark = { appId: "", appSecret: "" };
     parsed.lark.appSecret = process.env.LARK_APP_SECRET;
   }
+  if (process.env.LARK_OWNER_OPEN_ID) {
+    if (!parsed.lark) parsed.lark = { appId: "", appSecret: "" };
+    parsed.lark.ownerOpenId = process.env.LARK_OWNER_OPEN_ID;
+  }
 
   return parsed;
 }
@@ -31,6 +35,7 @@ export function saveConfig(path: string, config: AppConfig): void {
   if (process.env.DISCORD_TOKEN) toSave.discord.token = "";
   if (process.env.LARK_APP_ID) toSave.lark.appId = "";
   if (process.env.LARK_APP_SECRET) toSave.lark.appSecret = "";
+  if (process.env.LARK_OWNER_OPEN_ID && toSave.lark) toSave.lark.ownerOpenId = "";
   writeFileSync(path, stringify(toSave), "utf-8");
 }
 

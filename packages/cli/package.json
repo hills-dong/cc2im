@@ -10,12 +10,13 @@
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx watch --include ../../config.yaml src/cli.ts web --port 3000",
     "test": "vitest run"
   },
   "dependencies": {
     "@cc2im/core": "*",
     "@cc2im/server": "*",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "discord.js": "^14.16.0",
     "ws": "^8.18.0"
   },

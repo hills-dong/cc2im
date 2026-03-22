@@ -87,7 +87,7 @@ describe("chat store", () => {
         project: "proj",
         sessionId: "sess-1",
         message: "hello",
-        threadKey: "web:proj:1000",
+        threadKey: "wb_proj:1000",
       });
       vi.restoreAllMocks();
     });
@@ -109,7 +109,7 @@ describe("chat store", () => {
     it("updates streaming assistant message with initial content", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       registeredHandlers.get("chat.message")!({
         type: "chat.message",
@@ -137,7 +137,7 @@ describe("chat store", () => {
     it("last message not streaming does not update", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       // First set content via chat.message
       registeredHandlers.get("chat.message")!({
@@ -175,7 +175,7 @@ describe("chat store", () => {
     it("replaces streaming message content", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       // First create the message mapping via chat.message
       registeredHandlers.get("chat.message")!({
@@ -201,7 +201,7 @@ describe("chat store", () => {
     it("multiple chat.update events replace (not accumulate)", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       // Create message mapping
       registeredHandlers.get("chat.message")!({
@@ -239,7 +239,7 @@ describe("chat store", () => {
     it("sets streaming=false and preserves content from prior chat.update", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       // Content set by chat.message + chat.update before done
       registeredHandlers.get("chat.message")!({
@@ -271,7 +271,7 @@ describe("chat store", () => {
     it("sets tokens from event", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       registeredHandlers.get("chat.done")!({
         type: "chat.done",
@@ -287,7 +287,7 @@ describe("chat store", () => {
     it("cleans up threadKeyMap (subsequent events fall through)", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       // Set content before done
       registeredHandlers.get("chat.message")!({
@@ -335,7 +335,7 @@ describe("chat store", () => {
     it("sets error message on streaming assistant", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       registeredHandlers.get("chat.error")!({
         type: "chat.error",
@@ -353,7 +353,7 @@ describe("chat store", () => {
     it("undefined error message shows Unknown error", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       registeredHandlers.get("chat.error")!({
         type: "chat.error",
@@ -379,7 +379,7 @@ describe("chat store", () => {
     it("last message not streaming does not update", () => {
       vi.spyOn(Date, "now").mockReturnValue(5000);
       sendMessage("proj", "hi");
-      const threadKey = "web:proj:5000";
+      const threadKey = "wb_proj:5000";
 
       // First complete the stream
       registeredHandlers.get("chat.done")!({

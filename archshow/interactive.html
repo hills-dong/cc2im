@@ -1,0 +1,1777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cc2im — Interactive Architecture Diagram</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #09090b;
+  --bg-card: #18181b;
+  --bg-code: #1e1e22;
+  --border: #27272a;
+  --border-hover: #3f3f46;
+  --text: #fafafa;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
+  --cyan: #4cc9f0;
+  --cyan-dim: #4cc9f020;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --purple: #a78bfa;
+  --orange: #fb923c;
+  --pink: #f472b6;
+  --blue: #5865F2;
+  --lark-blue: #2D60F5;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  width: 100vw; height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Controls bar ── */
+#controls {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  background: rgba(9,9,11,0.92); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; height: 44px;
+}
+#controls h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.5px; white-space: nowrap; }
+#controls h1 span { color: var(--cyan); }
+.ctrl-sep { width: 1px; height: 20px; background: var(--border); }
+.ctrl-btn {
+  font-size: 12px; padding: 4px 10px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-muted); cursor: pointer; font-family: var(--font-mono);
+  transition: all 0.15s; white-space: nowrap;
+}
+.ctrl-btn:hover { border-color: var(--border-hover); color: var(--text); }
+.ctrl-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(251,191,36,0.08); }
+#zoom-label { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); min-width: 48px; text-align: center; }
+.ctrl-shortcuts { margin-left: auto; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.ctrl-shortcuts kbd {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 4px; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+}
+
+/* ── Viewport ── */
+#viewport {
+  position: fixed; top: 44px; left: 0; right: 0; bottom: 0;
+  overflow: hidden; cursor: grab;
+}
+#viewport.dragging { cursor: grabbing; }
+
+#canvas {
+  position: absolute; transform-origin: 0 0;
+  width: 5200px; height: 4600px;
+}
+
+/* ── SVG connections overlay ── */
+#connections {
+  position: absolute; top: 0; left: 0;
+  width: 5200px; height: 4600px;
+  pointer-events: none; z-index: 1;
+}
+
+/* ── Nodes ── */
+.node {
+  position: absolute; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 10px;
+  overflow: visible; z-index: 2;
+  transition: box-shadow 0.2s, opacity 0.3s, filter 0.3s, border-color 0.3s;
+}
+.node:hover { box-shadow: 0 0 24px rgba(76,201,240,0.06); }
+.node-head {
+  padding: 10px 14px 8px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.node-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.node-title { font-size: 14px; font-weight: 700; }
+.node-badge {
+  font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 4px;
+  background: var(--cyan-dim); color: var(--cyan); font-family: var(--font-mono);
+  margin-left: auto;
+}
+.node-body { padding: 10px 14px 14px; }
+.left-accent { border-left: 3px solid; }
+
+/* ── Content styles ── */
+.section-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text-dim); margin: 8px 0 4px;
+}
+.section-label:first-child { margin-top: 0; }
+
+pre.code-block {
+  background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px;
+  padding: 8px 10px; overflow-x: auto; font-family: var(--font-mono);
+  font-size: 10.5px; line-height: 1.65; color: var(--text-muted); margin: 4px 0;
+  user-select: text;
+}
+.kw { color: var(--purple); } .tp { color: var(--cyan); }
+.str { color: var(--green); } .cm { color: var(--text-dim); }
+.fn { color: var(--yellow); } .num { color: var(--orange); }
+.prop { color: var(--pink); }
+
+.info-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 4px 0; }
+.info-table th {
+  text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border);
+  color: var(--text-dim); font-weight: 500; font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.info-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.info-table tr:last-child td { border-bottom: none; }
+.info-table code {
+  background: var(--bg-code); padding: 1px 4px; border-radius: 3px;
+  font-size: 10px; color: var(--cyan); font-family: var(--font-mono);
+}
+
+.tag {
+  display: inline-block; font-size: 9px; padding: 1px 5px;
+  border-radius: 3px; font-weight: 500; font-family: var(--font-mono);
+}
+.tag-cyan { background: var(--cyan-dim); color: var(--cyan); }
+.tag-green { background: #34d39920; color: var(--green); }
+.tag-yellow { background: #fbbf2420; color: var(--yellow); }
+.tag-purple { background: #a78bfa20; color: var(--purple); }
+.tag-orange { background: #fb923c20; color: var(--orange); }
+.tag-pink { background: #f472b620; color: var(--pink); }
+.tag-red { background: #f8717120; color: var(--red); }
+
+.flow-step { display: flex; gap: 6px; padding: 3px 0; align-items: flex-start; }
+.flow-num {
+  width: 18px; height: 18px; border-radius: 4px;
+  background: var(--cyan-dim); color: var(--cyan);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; flex-shrink: 0;
+}
+.flow-text { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.flow-text strong { color: var(--text); }
+.desc-text { font-size: 11px; color: var(--text-dim); margin: 3px 0; line-height: 1.5; }
+.separator { height: 1px; background: var(--border); margin: 6px 0; }
+
+.state-row { display: flex; gap: 5px; flex-wrap: wrap; margin: 4px 0; align-items: center; }
+.state-pill {
+  font-size: 10px; padding: 2px 7px; border-radius: 4px;
+  border: 1px solid var(--border); color: var(--text-muted); font-family: var(--font-mono);
+}
+.state-pill.s-active { border-color: var(--cyan); color: var(--cyan); }
+.state-pill.s-green { border-color: var(--green); color: var(--green); }
+.state-pill.s-red { border-color: var(--red); color: var(--red); }
+.state-pill.s-yellow { border-color: var(--yellow); color: var(--yellow); }
+.arrow-label { font-size: 9px; color: var(--text-dim); }
+
+/* ── fn-anchor styles ── */
+.fn-anchor {
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 3px;
+  transition: all 0.2s;
+  position: relative;
+}
+.fn-anchor:hover {
+  background: rgba(251, 191, 36, 0.15);
+}
+.fn-anchor.highlighted {
+  background: rgba(251, 191, 36, 0.2);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
+}
+.fn-anchor.chain-active {
+  animation: fnPulse 1.5s ease-in-out infinite;
+}
+@keyframes fnPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5); }
+}
+
+/* ── Chain dimming ── */
+.node.dimmed { opacity: 0.15; filter: grayscale(0.8); }
+.node.chain-node { opacity: 1; filter: none; border-color: rgba(251, 191, 36, 0.4); }
+
+/* ── Entry point panel ── */
+#entry-panel {
+  position: fixed; top: 56px; right: 16px; z-index: 1001;
+  background: rgba(24,24,27,0.95); border: 1px solid var(--border);
+  border-radius: 10px; width: 380px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  font-family: var(--font-mono);
+  overflow: hidden;
+}
+#entry-panel-header {
+  padding: 10px 14px 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+}
+#entry-panel-header .title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--yellow);
+}
+#entry-panel-header .toggle-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-dim); cursor: pointer; font-size: 11px;
+  padding: 2px 6px; font-family: var(--font-mono);
+  transition: all 0.15s;
+}
+#entry-panel-header .toggle-btn:hover { color: var(--text); border-color: var(--border-hover); }
+#entry-panel-body { padding: 6px 0; }
+#entry-panel-body.collapsed { display: none; }
+.entry-item {
+  padding: 6px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  transition: all 0.15s; font-size: 10.5px; color: var(--text-muted);
+}
+.entry-item:hover { background: rgba(251,191,36,0.06); color: var(--text); }
+.entry-item.active { background: rgba(251,191,36,0.1); color: var(--yellow); }
+.entry-dot {
+  width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--yellow);
+  flex-shrink: 0; transition: all 0.15s;
+}
+.entry-item.active .entry-dot { background: var(--yellow); }
+.entry-name { font-weight: 600; color: var(--text); min-width: 120px; }
+.entry-item.active .entry-name { color: var(--yellow); }
+.entry-path { color: var(--text-dim); font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Speed control ── */
+#speed-control {
+  padding: 6px 14px 8px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10px; color: var(--text-dim);
+}
+#speed-control label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.speed-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-muted); cursor: pointer; font-size: 10px;
+  padding: 2px 8px; font-family: var(--font-mono);
+  transition: all 0.15s;
+}
+.speed-btn:hover { color: var(--text); border-color: var(--border-hover); }
+.speed-btn.active { border-color: var(--yellow); color: var(--yellow); background: rgba(251,191,36,0.08); }
+
+/* ── Mini-map ── */
+#minimap {
+  position: fixed; bottom: 16px; right: 16px; z-index: 1000;
+  width: 200px; height: 180px;
+  background: rgba(24,24,27,0.92); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+#minimap-canvas {
+  width: 100%; height: 100%;
+}
+#minimap-viewport {
+  position: absolute; border: 1.5px solid var(--cyan);
+  background: rgba(76,201,240,0.08); pointer-events: none;
+}
+
+/* ── Legend ── */
+#legend {
+  position: fixed; bottom: 16px; left: 16px; z-index: 1000;
+  background: rgba(24,24,27,0.92); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; font-size: 10px;
+}
+#legend .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; color: var(--text-muted); }
+#legend .line-sample { width: 24px; height: 0; border-top: 2px; display: inline-block; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ── Controls ── -->
+<div id="controls">
+  <h1><span>cc2im</span> Architecture</h1>
+  <div class="ctrl-sep"></div>
+  <button class="ctrl-btn" onclick="zoomBy(0.15)">+</button>
+  <span id="zoom-label">100%</span>
+  <button class="ctrl-btn" onclick="zoomBy(-0.15)">-</button>
+  <button class="ctrl-btn" onclick="resetView()">Reset</button>
+  <button class="ctrl-btn" onclick="fitToScreen()">Fit</button>
+  <div class="ctrl-sep"></div>
+  <span class="ctrl-shortcuts">
+    <kbd>Scroll</kbd> zoom &nbsp; <kbd>Drag</kbd> pan &nbsp; <kbd>+/-</kbd> zoom &nbsp; <kbd>0</kbd> reset &nbsp; <kbd>Arrows</kbd> pan &nbsp; <kbd>Esc</kbd> clear chain
+  </span>
+</div>
+
+<!-- ── Viewport ── -->
+<div id="viewport">
+  <div id="canvas">
+    <svg id="connections" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</div>
+
+<!-- ── Entry Point Panel ── -->
+<div id="entry-panel">
+  <div id="entry-panel-header">
+    <span class="title">Entry Points (click to trace)</span>
+    <button class="toggle-btn" onclick="toggleEntryPanel()">_</button>
+  </div>
+  <div id="entry-panel-body"></div>
+  <div id="speed-control">
+    <label>Speed:</label>
+    <button class="speed-btn" data-speed="0.5" onclick="setSpeed(0.5, this)">0.5x</button>
+    <button class="speed-btn active" data-speed="1" onclick="setSpeed(1, this)">1x</button>
+    <button class="speed-btn" data-speed="2" onclick="setSpeed(2, this)">2x</button>
+  </div>
+</div>
+
+<!-- ── Mini-map ── -->
+<div id="minimap">
+  <canvas id="minimap-canvas"></canvas>
+  <div id="minimap-viewport"></div>
+</div>
+
+<!-- ── Legend ── -->
+<div id="legend">
+  <div style="font-weight:600;color:var(--text);margin-bottom:4px;">Connection Lines</div>
+  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#4cc9f0" stroke-width="1.5"/></svg> Message flow (cyan)</div>
+  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#3f3f46" stroke-width="1.2" stroke-dasharray="4,3"/></svg> Store ops (dim)</div>
+  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#a78bfa" stroke-width="1.5"/></svg> API flow (purple)</div>
+  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="6,3"/></svg> Async / return (orange)</div>
+  <div class="row"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#34d399" stroke-width="1.2"/></svg> WebSocket protocol (green)</div>
+  <div class="row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;"><svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="#fbbf24" stroke-width="2.5"/></svg> Active chain (yellow)</div>
+</div>
+
+<script>
+// ============================================================
+// NODE DEFINITIONS — positions and content
+// ============================================================
+
+// Helper: wrap a code element text with fn-anchor
+function fa(nodeId, funcName, displayText) {
+  return `<span class="fn-anchor" data-fn="${nodeId}:${funcName}">${displayText}</span>`;
+}
+
+const NODES = [
+  // ── Column 1: Clients (x: 60) ──
+  {
+    id: 'discord', x: 60, y: 60, w: 420, color: '#5865F2',
+    title: 'Discord Client', badge: 'discord.js v14', dot: '#5865F2',
+    html: `
+      <div class="section-label">DiscordAdapter</div>
+      <table class="info-table">
+        <tr><td>SDK</td><td><code>discord.js</code> v14</td></tr>
+        <tr><td>Connection</td><td>Bot Gateway (WebSocket)</td></tr>
+        <tr><td>Channels</td><td>Creates <code>cc2im-{project}</code> text channel per project</td></tr>
+        <tr><td>Threads</td><td>Discord thread from first message</td></tr>
+        <tr><td>Max length</td><td>2,000 chars</td></tr>
+        <tr><td>Extras</td><td>Slash commands, reactions, file upload</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Key Methods</div>
+      <table class="info-table">
+        <tr><th>Method</th><th>Purpose</th></tr>
+        <tr><td><code>${fa('discord','onMessage','onMessage(handler)')}</code></td><td>Register incoming message callback</td></tr>
+        <tr><td><code>${fa('discord','setupProject','setupProject(name)')}</code></td><td>Create/find channel, register route</td></tr>
+        <tr><td><code>${fa('discord','createThread','createThread(channelId, name)')}</code></td><td>Start Discord thread</td></tr>
+        <tr><td><code>${fa('discord','sendMessage','sendMessage()')}</code></td><td>Post to channel/thread</td></tr>
+        <tr><td><code>${fa('discord','editMessage','editMessage()')}</code></td><td>Update streaming content</td></tr>
+        <tr><td><code>${fa('discord','uploadFile','uploadFile()')}</code></td><td>Attach images/files</td></tr>
+        <tr><td><code>${fa('discord','addReaction','addReaction()')}</code></td><td>Add emoji reactions</td></tr>
+      </table>`
+  },
+  {
+    id: 'lark', x: 60, y: 520, w: 420, color: '#2D60F5',
+    title: 'Lark Client', badge: 'node-sdk', dot: '#2D60F5',
+    html: `
+      <div class="section-label">LarkAdapter</div>
+      <table class="info-table">
+        <tr><td>SDK</td><td><code>@larksuiteoapi/node-sdk</code></td></tr>
+        <tr><td>Connection</td><td>Lark WebSocket client</td></tr>
+        <tr><td>Channels</td><td>Creates group chats per project</td></tr>
+        <tr><td>Threads</td><td>Lark message threads (reply chains)</td></tr>
+        <tr><td>Max length</td><td>30,000 chars</td></tr>
+        <tr><td>Extras</td><td>Owner init (<code>/im-init</code>), member management</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Key Methods</div>
+      <table class="info-table">
+        <tr><th>Method</th><th>Purpose</th></tr>
+        <tr><td><code>${fa('lark','onMessage','onMessage(handler)')}</code></td><td>Register incoming message callback</td></tr>
+        <tr><td><code>${fa('lark','setupProject','setupProject(name)')}</code></td><td>Create/find group chat</td></tr>
+        <tr><td><code>${fa('lark','sendMessage','sendMessage()')}</code></td><td>Post via Lark API</td></tr>
+        <tr><td><code>${fa('lark','editMessage','editMessage()')}</code></td><td>Update message content</td></tr>
+        <tr><td><code>${fa('lark','uploadFile','uploadFile()')}</code></td><td>Upload via Lark file API</td></tr>
+      </table>`
+  },
+  {
+    id: 'webui', x: 60, y: 960, w: 420, color: '#4cc9f0',
+    title: 'Web UI', badge: 'SvelteKit 5 + shadcn', dot: '#4cc9f0',
+    html: `
+      <div class="section-label">Routes</div>
+      <table class="info-table">
+        <tr><td><code>/</code></td><td>Redirect to /chat</td></tr>
+        <tr><td><code>/chat</code></td><td>Project list</td></tr>
+        <tr><td><code>/chat/[project]</code></td><td>Session list</td></tr>
+        <tr><td><code>/chat/[project]/[session]</code></td><td>Chat conversation</td></tr>
+        <tr><td><code>/stats</code></td><td>Token usage dashboard</td></tr>
+        <tr><td><code>/config</code></td><td>Configuration editor</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Stores</div>
+      <table class="info-table">
+        <tr><td><code>connection.ts</code></td><td>WS lifecycle, auto-reconnect (0/1/2/4s then 30s cap), message queue, event dispatch</td></tr>
+        <tr><td><code>chat.ts</code></td><td>Session state (Map&lt;sessKey, Session&gt;), message arrays, thread key mapping</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Key Actions</div>
+      <table class="info-table">
+        <tr><td><code>${fa('webui','chat.send','chat.send')}</code></td><td>Send message via WS</td></tr>
+        <tr><td><code>${fa('webui','chat.subscribe','chat.subscribe')}</code></td><td>Subscribe to thread updates</td></tr>
+        <tr><td><code>${fa('webui','chat.abort','chat.abort')}</code></td><td>Abort current stream</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Session Lifecycle (state machine)</div>
+      <div class="state-row">
+        <span class="state-pill s-active">NewSession</span>
+        <span class="arrow-label">chat.message</span>
+        <span class="state-pill">Streaming</span>
+        <span class="arrow-label">chat.update</span>
+        <span class="state-pill">Streaming</span>
+        <span class="arrow-label">chat.done</span>
+        <span class="state-pill s-green">Complete</span>
+      </div>
+      <div class="desc-text">sessKey = "new-{project}" (temp). On first chat.message, rekeyed to threadKey. threadKeyMap maps threadKey to sessKey.</div>
+      <div class="separator"></div>
+      <div class="section-label">Reconnect Logic</div>
+      <div class="desc-text">Exponential backoff [0, 1s, 2s, 4s] then 30s cap. On open: reset counter, send sync.state, flush queued messages.</div>`
+  },
+
+  // ── Column 2: Core Middleware (x: 560) ──
+  {
+    id: 'router', x: 560, y: 60, w: 440, color: '#4cc9f0',
+    title: 'Router', badge: 'core/router.ts', dot: '#4cc9f0',
+    html: `
+      <div class="section-label">Channel Mapping</div>
+      <div class="desc-text">Maps <code>{platform}:{channelId}</code> to project. Registered at startup via <code>setupProject()</code>.</div>
+      <table class="info-table">
+        <tr><th>Platform</th><th>channelId Format</th><th>Router Key</th></tr>
+        <tr><td><span class="tag tag-purple">Discord</span></td><td>Discord channel ID</td><td><code>discord:1234567890</code></td></tr>
+        <tr><td><span class="tag tag-cyan">Lark</span></td><td>Lark chat ID</td><td><code>lark:oc_xxxxx</code></td></tr>
+        <tr><td><span class="tag tag-green">Web</span></td><td><code>wb_{projectName}</code></td><td><code>web:wb_myproject</code></td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Management Commands</div>
+      <table class="info-table">
+        <tr><th>Command</th><th>Action</th></tr>
+        <tr><td><code>/im-list-projects</code></td><td>List all configured projects</td></tr>
+        <tr><td><code>/im-add-project &lt;name&gt; &lt;dir&gt;</code></td><td>Add project, create channel</td></tr>
+        <tr><td><code>/im-remove-project &lt;name&gt;</code></td><td>Remove project</td></tr>
+        <tr><td><code>/im-reload-config</code></td><td>Hot-reload config file</td></tr>
+        <tr><td><code>/im-done</code></td><td>Mark thread completed</td></tr>
+        <tr><td><code>/im-reopen</code></td><td>Reopen completed thread</td></tr>
+        <tr><td><code>/im-init</code></td><td>Lark only: save owner, join groups</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Key Methods</div>
+      <table class="info-table">
+        <tr><td><code>${fa('router','getProject','getProject(channelId, platform)')}</code></td><td>Resolve channel to project config</td></tr>
+        <tr><td><code>${fa('router','parseManagementCommand','parseManagementCommand(content)')}</code></td><td>Detect /im-* commands</td></tr>
+        <tr><td><code>${fa('router','setupProject','setupProject(name, channelId, platform)')}</code></td><td>Register channel mapping</td></tr>
+      </table>`
+  },
+  {
+    id: 'webadapter', x: 560, y: 620, w: 440, color: '#4cc9f0',
+    title: 'WebAdapter', badge: 'HTTP + WS', dot: '#4cc9f0',
+    html: `
+      <div class="section-label">Internal State Maps</div>
+      <table class="info-table">
+        <tr><td><code>subscriptions</code></td><td>Map&lt;threadId, Set&lt;WS&gt;&gt; — per-thread subscribers</td></tr>
+        <tr><td><code>streamBuffers</code></td><td>Map&lt;threadId, string&gt; — current stream for recovery</td></tr>
+        <tr><td><code>messageThreadMap</code></td><td>Map&lt;msgId, threadId&gt; — message to thread lookup</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Extended Methods (beyond PlatformAdapter)</div>
+      <table class="info-table">
+        <tr><th>Method</th><th>Purpose</th></tr>
+        <tr><td><code>${fa('webadapter','onAbort','onAbort(handler)')}</code></td><td>Register abort callback for sessionManager.abort(threadKey)</td></tr>
+        <tr><td><code>${fa('webadapter','sendDone','sendDone(threadId, tokens)')}</code></td><td>Broadcast chat.done + clear buffer</td></tr>
+        <tr><td><code>${fa('webadapter','sendSessionUpdate','sendSessionUpdate()')}</code></td><td>Broadcast session.update to all clients</td></tr>
+        <tr><td><code>${fa('webadapter','sendError','sendError(threadId, err)')}</code></td><td>Broadcast chat.error + clear buffer</td></tr>
+        <tr><td><code>${fa('webadapter','sendToThread','sendToThread(threadId, msg)')}</code></td><td>Send to subscribers, fallback broadcast</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">PlatformAdapter Interface Methods</div>
+      <table class="info-table">
+        <tr><td><code>${fa('webadapter','sendMessage','sendMessage()')}</code></td><td>Send chat.message to thread subscribers</td></tr>
+        <tr><td><code>${fa('webadapter','editMessage','editMessage()')}</code></td><td>Send chat.update to thread subscribers</td></tr>
+        <tr><td><code>${fa('webadapter','uploadFile','uploadFile()')}</code></td><td>Send chat.file (base64) to thread</td></tr>
+        <tr><td><code>addReaction()</code></td><td>No-op for web</td></tr>
+      </table>`
+  },
+  {
+    id: 'wsprotocol', x: 560, y: 1280, w: 440, color: '#34d399',
+    title: 'WebSocket Protocol', badge: 'Client <-> Server', dot: '#34d399',
+    html: `
+      <div class="section-label">Client to Server</div>
+      <table class="info-table">
+        <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
+        <tr><td><code>chat.send</code></td><td>project, message, threadKey?, sessionId?</td><td>Send message, auto-subscribe</td></tr>
+        <tr><td><code>chat.subscribe</code></td><td>threadKey</td><td>Subscribe; if active, get chat.recover</td></tr>
+        <tr><td><code>chat.abort</code></td><td>threadKey</td><td>Abort Claude process (SIGTERM)</td></tr>
+        <tr><td><code>sync.state</code></td><td><em>none</em></td><td>Request state (auto on connect)</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Server to Client</div>
+      <table class="info-table">
+        <tr><th>Type</th><th>Description</th></tr>
+        <tr><td><code>chat.message</code></td><td>New message (initial "Thinking..." or chunks)</td></tr>
+        <tr><td><code>chat.update</code></td><td>Streaming update — replaces content</td></tr>
+        <tr><td><code>chat.done</code></td><td>Stream complete, clears buffer</td></tr>
+        <tr><td><code>chat.error</code></td><td>Error during processing</td></tr>
+        <tr><td><code>chat.file</code></td><td>File attachment (image/text, base64)</td></tr>
+        <tr><td><code>chat.recover</code></td><td>On subscribe if active stream — buffered content</td></tr>
+        <tr><td><code>session.update</code></td><td>Sidebar refresh (new/renamed session)</td></tr>
+        <tr><td><code>sync.state</code></td><td>activeSessions[], bufferedOutput</td></tr>
+        <tr><td><code>error</code></td><td>Protocol error (INVALID_JSON, UNKNOWN_TYPE)</td></tr>
+      </table>`
+  },
+
+  // ── Column 3: Processing (x: 1080) ──
+  {
+    id: 'session', x: 1080, y: 60, w: 460, color: '#4cc9f0',
+    title: 'SessionManager', badge: 'core/session.ts', dot: '#4cc9f0',
+    html: `
+      <div class="section-label">State Machine</div>
+      <div class="state-row">
+        <span class="state-pill s-active">Queued</span>
+        <span class="arrow-label">thread free</span>
+        <span class="state-pill">WaitingSlot</span>
+        <span class="arrow-label">slot available</span>
+        <span class="state-pill">Running</span>
+      </div>
+      <div class="state-row">
+        <span class="state-pill s-green">Done</span>
+        <span class="state-pill s-red">Error</span>
+        <span class="state-pill s-yellow">Aborted</span>
+      </div>
+      <div class="desc-text">Active: Map&lt;threadKey, ChildProcess&gt;. Max concurrent: 5 (default). Thread busy = queue. All slots full = poll 500ms.</div>
+      <div class="separator"></div>
+      <div class="section-label">Concurrency Queue (FIFO per-thread)</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Queue exists for threadKey -> push & await</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">Dequeued -> wait for active.size &lt; maxConcurrentProcesses</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">Call onStart(), spawn process</div></div>
+      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">On close -> shift next from queue or delete</div></div>
+      <div class="desc-text">Same thread = sequential. Different threads = parallel up to limit.</div>
+      <div class="separator"></div>
+      <div class="section-label">Process Spawn</div>
+      <pre class="code-block"><span class="fn">${fa('session','spawn','spawn')}</span>(<span class="prop">claudeConfig.command</span>, [
+  <span class="str">"--print"</span>,
+  <span class="str">"--output-format"</span>, <span class="str">"stream-json"</span>,
+  <span class="str">"--model"</span>, model,
+  <span class="str">"--resume"</span>, sessionId,
+  <span class="str">"-p"</span>, fullMessage,
+], {
+  <span class="prop">cwd</span>: projectDir,
+  <span class="prop">env</span>: { ...process.env },
+  <span class="prop">stdio</span>: [<span class="str">"ignore"</span>, <span class="str">"pipe"</span>, <span class="str">"pipe"</span>],
+});</pre>
+      <div class="desc-text">Stdout via readline, each line parsed as JSON (StreamEvent). Stderr accumulated for errors.</div>
+      <div class="separator"></div>
+      <div class="section-label">SessionResult Interface</div>
+      <pre class="code-block"><span class="kw">interface</span> <span class="tp">SessionResult</span> {
+  <span class="prop">sessionId</span>: <span class="tp">string</span>;
+  <span class="prop">text</span>: <span class="tp">string</span>;
+  <span class="prop">success</span>: <span class="tp">boolean</span>;
+  <span class="prop">inputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">outputTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheReadTokens</span>: <span class="tp">number</span>;
+  <span class="prop">cacheCreationTokens</span>: <span class="tp">number</span>;
+}</pre>
+      <div class="separator"></div>
+      <div class="section-label">Key Methods</div>
+      <table class="info-table">
+        <tr><td><code>${fa('session','invoke','invoke(threadKey, dir, sessionId, msg)')}</code></td><td>Queue & spawn Claude process</td></tr>
+        <tr><td><code>${fa('session','abort','abort(threadKey)')}</code></td><td>SIGTERM active process</td></tr>
+        <tr><td><code>${fa('session','abortAll','abortAll()')}</code></td><td>SIGTERM all processes (shutdown)</td></tr>
+        <tr><td><code>getActiveCount()</code></td><td>Current running processes</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Event Callback</div>
+      <table class="info-table">
+        <tr><td><code>${fa('session','onEvent','onEvent(threadKey, event)')}</code></td><td>Stream event dispatched to adapter</td></tr>
+      </table>`
+  },
+  {
+    id: 'formatter', x: 1080, y: 920, w: 460, color: '#4cc9f0',
+    title: 'Formatter', badge: 'core/formatter.ts', dot: '#4cc9f0',
+    html: `
+      <div class="section-label">Pipeline Steps</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text"><strong>${fa('formatter','extractReactions','extractReactions()')}</strong> — strip [react:emoji] from end -> {cleanText, reactions[]}</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text"><strong>${fa('formatter','formatOutput','formatOutput()')}</strong> — &le;maxLen: single. &le;maxLen*5: splitText [i/N]. >maxLen*5: summary + .md attachment</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text"><strong>${fa('formatter','extractImages','extractImages()')}</strong> — match image paths -> Attachment[] for upload</div></div>
+      <div class="separator"></div>
+      <div class="section-label">splitText Detail</div>
+      <div class="desc-text">${fa('formatter','splitText','splitText()')} — Split at: newlines first, then spaces, then hard break. Each chunk gets <code>[i/N]</code> prefix (12 chars reserved).</div>
+      <div class="separator"></div>
+      <div class="section-label">Platform Limits (maxMessageLength)</div>
+      <table class="info-table">
+        <tr><td><span class="tag tag-purple">Discord</span></td><td>2,000 chars</td></tr>
+        <tr><td><span class="tag tag-cyan">Lark</span></td><td>30,000 chars</td></tr>
+        <tr><td><span class="tag tag-green">Web</span></td><td>100,000 chars</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Return to Adapter</div>
+      <table class="info-table">
+        <tr><td><code>formatted messages</code></td><td>-> adapter.editMessage()</td></tr>
+        <tr><td><code>chunks</code></td><td>-> adapter.sendMessage()</td></tr>
+        <tr><td><code>attachments</code></td><td>-> adapter.uploadFile()</td></tr>
+        <tr><td><code>reactions</code></td><td>-> adapter.addReaction()</td></tr>
+      </table>`
+  },
+
+  // ── Column 4: External (x: 1620) ──
+  {
+    id: 'claude', x: 1620, y: 60, w: 450, color: '#fb923c',
+    title: 'Claude Code', badge: 'child process', dot: '#fb923c',
+    html: `
+      <div class="section-label">Stream Events (NDJSON on stdout)</div>
+      <pre class="code-block"><span class="kw">interface</span> <span class="tp">${fa('claude','StreamInitEvent','StreamInitEvent')}</span> {
+  <span class="prop">type</span>: <span class="str">"system"</span>; <span class="prop">subtype</span>: <span class="str">"init"</span>;
+  <span class="prop">session_id</span>: <span class="tp">string</span>;
+}
+
+<span class="kw">interface</span> <span class="tp">${fa('claude','StreamAssistantEvent','StreamAssistantEvent')}</span> {
+  <span class="prop">type</span>: <span class="str">"assistant"</span>;
+  <span class="prop">message</span>: {
+    <span class="prop">content</span>: <span class="tp">Array&lt;
+      | { type: "text"; text: string }
+      | { type: "tool_use"; name: string }
+    &gt;</span>;
+  };
+}
+
+<span class="kw">interface</span> <span class="tp">${fa('claude','StreamResultEvent','StreamResultEvent')}</span> {
+  <span class="prop">type</span>: <span class="str">"result"</span>;
+  <span class="prop">subtype</span>: <span class="str">"success"</span> | <span class="str">"error"</span>;
+  <span class="prop">result</span>: <span class="tp">string</span>;
+  <span class="prop">session_id</span>: <span class="tp">string</span>;
+  <span class="prop">usage</span>?: { input_tokens, output_tokens, ... };
+}</pre>
+      <div class="separator"></div>
+      <div class="section-label">AskUserQuestion Interception</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Detect tool_use name === "${fa('claude','AskUserQuestion','AskUserQuestion')}"</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">Store in lastAskQuestions</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">After invoke, format & send questions to user</div></div>
+      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">pendingAsks Map with Promise resolve</div></div>
+      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">Next user message resolves promise</div></div>
+      <div class="flow-step"><div class="flow-num">6</div><div class="flow-text">Parse answer ("AB" or text), re-invoke --resume</div></div>`
+  },
+  {
+    id: 'store', x: 1620, y: 680, w: 450, color: '#71717a',
+    title: 'SQLite Store', badge: 'WAL mode', dot: '#71717a',
+    html: `
+      <div class="section-label">Schema: threads</div>
+      <pre class="code-block">thread_id    TEXT  PK
+platform     TEXT  PK
+channel_id   TEXT
+session_id   TEXT
+project_name TEXT
+status       TEXT  "active | done | archived"
+name         TEXT
+created_at   DATETIME</pre>
+      <div class="separator"></div>
+      <div class="section-label">Schema: messages</div>
+      <pre class="code-block">message_id          TEXT  PK
+platform            TEXT  PK
+thread_id           TEXT  FK
+is_bot              BOOLEAN
+content_summary     TEXT
+input_tokens        INTEGER
+output_tokens       INTEGER
+cache_read_tokens   INTEGER
+cache_creation_tokens INTEGER
+model               TEXT
+created_at          DATETIME</pre>
+      <div class="desc-text">Index: <code>idx_messages_thread(thread_id, platform)</code></div>
+      <div class="separator"></div>
+      <div class="section-label">Schema: pending_restarts</div>
+      <pre class="code-block">thread_id   TEXT  PK
+platform    TEXT  PK
+created_at  DATETIME</pre>
+      <div class="separator"></div>
+      <div class="section-label">Store API Methods (13)</div>
+      <table class="info-table">
+        <tr><th>Method</th><th>SQL Pattern</th></tr>
+        <tr><td><code>${fa('store','upsertThread','upsertThread()')}</code></td><td>INSERT ... ON CONFLICT DO UPDATE</td></tr>
+        <tr><td><code>${fa('store','getThread','getThread()')}</code></td><td>SELECT WHERE thread_id=? AND platform=?</td></tr>
+        <tr><td><code>${fa('store','updateThreadStatus','updateThreadStatus()')}</code></td><td>UPDATE SET status=?</td></tr>
+        <tr><td><code>${fa('store','archiveThread','archiveThread()')}</code></td><td>UPDATE SET status='archived'</td></tr>
+        <tr><td><code>${fa('store','deleteThread','deleteThread()')}</code></td><td>DELETE messages + DELETE thread</td></tr>
+        <tr><td><code>${fa('store','saveMessage','saveMessage()')}</code></td><td>INSERT OR REPLACE with tokens</td></tr>
+        <tr><td><code>${fa('store','getSessionTokens','getSessionTokens()')}</code></td><td>SUM WHERE thread_id=? AND is_bot=1</td></tr>
+        <tr><td><code>getProjectTokens()</code></td><td>SUM JOIN threads WHERE project=?</td></tr>
+        <tr><td><code>${fa('store','getDailyTokens','getDailyTokens()')}</code></td><td>GROUP BY DATE, model</td></tr>
+        <tr><td><code>${fa('store','getOverviewTokens','getOverviewTokens()')}</code></td><td>GROUP BY thread_id, platform</td></tr>
+        <tr><td><code>${fa('store','markPendingRestart','markPendingRestart()')}</code></td><td>INSERT OR IGNORE</td></tr>
+        <tr><td><code>${fa('store','getPendingRestarts','getPendingRestarts()')}</code></td><td>JOIN threads on pending_restarts</td></tr>
+        <tr><td><code>${fa('store','listSessions','listSessions()')}</code></td><td>List threads, optional project filter</td></tr>
+      </table>
+      <div class="desc-text">Indexes: idx_messages_thread, idx_threads_project</div>`
+  },
+
+  // ── Column 5: Supporting (x: 2150) ──
+  {
+    id: 'config', x: 2150, y: 60, w: 420, color: '#71717a',
+    title: 'Config', badge: 'YAML + Env', dot: '#71717a',
+    html: `
+      <div class="section-label">AppConfig Interface</div>
+      <pre class="code-block"><span class="kw">interface</span> <span class="tp">AppConfig</span> {
+  <span class="prop">lark</span>: { appId, appSecret, ownerOpenId? };
+  <span class="prop">discord</span>: { token };
+  <span class="prop">projects</span>: <span class="tp">ProjectConfig[]</span>;
+  <span class="prop">claude</span>: <span class="tp">ClaudeConfig</span>;
+  <span class="prop">formatter</span>: <span class="tp">FormatterConfig</span>;
+}</pre>
+      <div class="separator"></div>
+      <div class="section-label">ProjectConfig Interface</div>
+      <pre class="code-block"><span class="kw">interface</span> <span class="tp">ProjectConfig</span> {
+  <span class="prop">name</span>: <span class="tp">string</span>;
+  <span class="prop">directory</span>: <span class="tp">string</span>;
+  <span class="prop">model</span>?: <span class="tp">string</span>;
+  <span class="prop">platforms</span>: Partial&lt;Record&lt;Platform, boolean&gt;&gt;;
+}</pre>
+      <div class="separator"></div>
+      <div class="section-label">ClaudeConfig + FormatterConfig</div>
+      <pre class="code-block"><span class="kw">interface</span> <span class="tp">ClaudeConfig</span> {
+  <span class="prop">command</span>: <span class="str">"claude"</span>;
+  <span class="prop">defaultArgs</span>: <span class="tp">string[]</span>;
+  <span class="prop">bufferInterval</span>: <span class="tp">number</span>;
+  <span class="prop">timeout</span>: <span class="tp">number</span>;
+}
+<span class="kw">interface</span> <span class="tp">FormatterConfig</span> {
+  <span class="prop">maxMessageLength</span>: Record&lt;Platform, number&gt;;
+  <span class="prop">maxConcurrentProcesses</span>: <span class="tp">number</span>;
+}</pre>
+      <div class="separator"></div>
+      <div class="section-label">Env Overrides</div>
+      <table class="info-table">
+        <tr><th>Env Var</th><th>Overrides</th></tr>
+        <tr><td><code>CC2IM_CONFIG</code></td><td>Config file path</td></tr>
+        <tr><td><code>CC2IM_DB</code></td><td>Database path</td></tr>
+        <tr><td><code>DISCORD_TOKEN</code></td><td>discord.token</td></tr>
+        <tr><td><code>LARK_APP_ID</code></td><td>lark.appId</td></tr>
+        <tr><td><code>LARK_APP_SECRET</code></td><td>lark.appSecret</td></tr>
+      </table>
+      <div class="desc-text">Search: CC2IM_CONFIG env -> --config flag -> ~/.config/cc2im/config.yaml -> ./config.yaml</div>
+      <div class="separator"></div>
+      <div class="section-label">Key Methods</div>
+      <table class="info-table">
+        <tr><td><code>${fa('config','loadConfig','loadConfig(path)')}</code></td><td>Load & validate YAML config</td></tr>
+        <tr><td><code>${fa('config','saveConfig','saveConfig(config)')}</code></td><td>Write config to YAML file</td></tr>
+      </table>`
+  },
+  {
+    id: 'api', x: 2150, y: 800, w: 420, color: '#a78bfa',
+    title: 'REST API', badge: 'server/api.ts', dot: '#a78bfa',
+    html: `
+      <div class="section-label">Endpoints (12)</div>
+      <table class="info-table">
+        <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>${fa('api','GET/config','/api/config')}</code></td><td>Config (secrets masked)</td></tr>
+        <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/config</code></td><td>Update config (allowlisted keys)</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/projects</code></td><td>List projects</td></tr>
+        <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/projects</code></td><td>Add project</td></tr>
+        <tr><td><span class="tag tag-yellow">PUT</span></td><td><code>/api/projects/:name</code></td><td>Update project</td></tr>
+        <tr><td><span class="tag tag-red">DEL</span></td><td><code>/api/projects/:name</code></td><td>Remove project</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>${fa('api','GET/sessions','/api/sessions')}</code></td><td>List sessions</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sessions/:id/messages</code></td><td>Session messages</td></tr>
+        <tr><td><span class="tag tag-orange">PATCH</span></td><td><code>/api/sessions/:id/archive</code></td><td>Archive session</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>${fa('api','GET/stats','/api/stats/tokens')}</code></td><td>Token stats</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/stats/overview</code></td><td>Per-project totals</td></tr>
+        <tr><td><span class="tag tag-cyan">POST</span></td><td><code>/api/claude/test</code></td><td>Verify Claude CLI</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Key Methods</div>
+      <table class="info-table">
+        <tr><td><code>${fa('api','handleApi','handleApi(req, res)')}</code></td><td>Route /api/* requests</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Security</div>
+      <div class="desc-text"><strong>Secret masking:</strong> GET /api/config masks tokens as ***</div>
+      <div class="desc-text"><strong>Secret preservation:</strong> PUT keeps originals when value is ***</div>
+      <div class="desc-text"><strong>Body limit:</strong> 1 MB max</div>
+      <div class="desc-text"><strong>Prototype pollution:</strong> Only allowlisted keys applied</div>
+      <div class="desc-text"><strong>Path traversal:</strong> Static serving validates resolved path</div>`
+  },
+  {
+    id: 'cli', x: 2150, y: 1420, w: 420, color: '#34d399',
+    title: 'CLI', badge: 'entry point', dot: '#34d399',
+    html: `
+      <div class="section-label">Startup Flow (${fa('cli','main','main()')})</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">loadConfig(path) — YAML + env overrides</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">new Store(dbPath) — SQLite init</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">SessionManager + Formatter + Router init</div></div>
+      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Init adapters (Discord/Lark/Web if configured)</div></div>
+      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">start() -> setupProject() -> onMessage/onReaction</div></div>
+      <div class="flow-step"><div class="flow-num">6</div><div class="flow-text">${fa('cli','recoverPendingRestarts','recoverPendingRestarts()')} from DB</div></div>
+      <div class="flow-step"><div class="flow-num">7</div><div class="flow-text">Register SIGINT/SIGTERM handlers</div></div>
+      <div class="separator"></div>
+      <div class="section-label">Service Commands</div>
+      <table class="info-table">
+        <tr><td><code>install</code></td><td>Generate systemd/launchd unit, enable + start</td></tr>
+        <tr><td><code>uninstall</code></td><td>Stop, disable, remove unit</td></tr>
+        <tr><td><code>start|stop|restart</code></td><td>systemctl/launchctl control</td></tr>
+        <tr><td><code>status</code></td><td>Show service status</td></tr>
+        <tr><td><code>logs</code></td><td>journalctl / log tail</td></tr>
+        <tr><td><code>run</code></td><td>Foreground (dev mode)</td></tr>
+        <tr><td><code>web</code></td><td>Start with web UI on port</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">Graceful Shutdown (${fa('cli','gracefulShutdown','gracefulShutdown()')})</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Mark active threads as pending restart</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">sessionManager.abortAll() — SIGTERM all</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">adapter.stop() each</div></div>
+      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">store.close()</div></div>
+      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">process.exit(0)</div></div>
+      <div class="separator"></div>
+      <div class="section-label">Pending Restart Recovery</div>
+      <div class="desc-text">On startup: load pending -> clear table -> for each:</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">Find adapter + project</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">invoke() with resume</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">Fail -> retry once (3s)</div></div>
+      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Second fail -> mark done, send error</div></div>`
+  },
+
+  // ── Bottom row: Cross-cutting ──
+  {
+    id: 'packages', x: 60, y: 1700, w: 480, color: '#34d399',
+    title: 'Packages', badge: 'Monorepo', dot: '#34d399',
+    html: `
+      <div class="section-label">Dependencies</div>
+      <table class="info-table">
+        <tr><th>Package</th><th>Description</th><th>Deps</th></tr>
+        <tr><td><span class="tag tag-cyan">core</span></td><td>Types, SessionManager, Router, Store, Formatter</td><td>--</td></tr>
+        <tr><td><span class="tag tag-green">cli</span></td><td>Entry point, adapters, service mgmt</td><td>core, server</td></tr>
+        <tr><td><span class="tag tag-purple">server</span></td><td>REST API handler</td><td>core</td></tr>
+        <tr><td><span class="tag tag-orange">ui</span></td><td>SvelteKit 5 + shadcn-svelte</td><td>HTTP+WS</td></tr>
+        <tr><td><span class="tag tag-pink">desktop</span></td><td>Tauri 2 native shell</td><td>embeds ui</td></tr>
+      </table>
+      <div class="separator"></div>
+      <div class="section-label">File Tree</div>
+      <pre class="code-block" style="font-size:10px;line-height:1.5"><span class="tp">core/src/</span> types, session, router, store, formatter, config
+<span class="tp">cli/src/</span>  index, cli, service
+  <span class="tp">adapters/</span> discord, lark, web
+<span class="tp">server/</span>   api.ts
+<span class="tp">ui/src/</span>   routes/, lib/stores/, lib/components/
+<span class="tp">desktop/</span>  Tauri 2 config + Rust shell</pre>`
+  },
+  {
+    id: 'types', x: 560, y: 1700, w: 480, color: '#4cc9f0',
+    title: 'Core Types', badge: '@cc2im/core', dot: '#4cc9f0',
+    html: `
+      <div class="section-label">Platform & IncomingMessage</div>
+      <pre class="code-block"><span class="kw">type</span> <span class="tp">Platform</span> = <span class="str">"lark"</span> | <span class="str">"discord"</span> | <span class="str">"web"</span>;
+
+<span class="kw">interface</span> <span class="tp">IncomingMessage</span> {
+  <span class="prop">platform</span>: <span class="tp">Platform</span>;
+  <span class="prop">channelId</span>: <span class="tp">string</span>;
+  <span class="prop">threadId</span>: <span class="tp">string | null</span>;
+  <span class="prop">messageId</span>: <span class="tp">string</span>;
+  <span class="prop">userId</span>: <span class="tp">string</span>;
+  <span class="prop">userName</span>: <span class="tp">string</span>;
+  <span class="prop">content</span>: <span class="tp">string</span>;
+  <span class="prop">attachments</span>: <span class="tp">Attachment[]</span>;
+  <span class="prop">replyToMessageId</span>?: <span class="tp">string</span>;
+}</pre>
+      <div class="separator"></div>
+      <div class="section-label">PlatformAdapter Interface</div>
+      <pre class="code-block"><span class="kw">interface</span> <span class="tp">PlatformAdapter</span> {
+  <span class="kw">readonly</span> <span class="prop">platform</span>: <span class="tp">Platform</span>;
+  <span class="fn">start</span>/<span class="fn">stop</span>/<span class="fn">setupProject</span>
+  <span class="fn">createThread</span>/<span class="fn">getThreadName</span>/<span class="fn">renameThread</span>
+  <span class="fn">sendMessage</span>/<span class="fn">editMessage</span>/<span class="fn">uploadFile</span>/<span class="fn">addReaction</span>
+  <span class="fn">onMessage</span>/<span class="fn">onReaction</span>
+}</pre>`
+  },
+  {
+    id: 'msgflow', x: 1080, y: 1700, w: 480, color: '#fbbf24',
+    title: 'Message Flow', badge: 'E2E 8-step', dot: '#fbbf24',
+    html: `
+      <div class="section-label">Full Sequence</div>
+      <div class="flow-step"><div class="flow-num">1</div><div class="flow-text"><strong>Receive</strong> — Adapter constructs IncomingMessage</div></div>
+      <div class="flow-step"><div class="flow-num">2</div><div class="flow-text"><strong>Route</strong> — {platform}:{channelId} -> project. Check /im-*</div></div>
+      <div class="flow-step"><div class="flow-num">3</div><div class="flow-text"><strong>Thread</strong> — null threadId -> create. Async title via haiku</div></div>
+      <div class="flow-step"><div class="flow-num">4</div><div class="flow-text"><strong>Persist</strong> — Save msg to DB. Send "Thinking..."</div></div>
+      <div class="flow-step"><div class="flow-num">5</div><div class="flow-text"><strong>Invoke</strong> — Queue -> concurrency slot -> spawn claude</div></div>
+      <div class="flow-step"><div class="flow-num">6</div><div class="flow-text"><strong>Stream</strong> — NDJSON: init -> assistant -> result</div></div>
+      <div class="flow-step"><div class="flow-num">7</div><div class="flow-text"><strong>Live Update</strong> — editMessage every 100ms(web)/3s(discord)</div></div>
+      <div class="flow-step"><div class="flow-num">8</div><div class="flow-text"><strong>Format & Deliver</strong> — reactions, split, images, "done"</div></div>`
+  },
+];
+
+// ============================================================
+// FUNCTION-LEVEL CONNECTION DEFINITIONS
+// ============================================================
+const FN_CONNECTIONS = [
+  // ── Discord message flow ──
+  { id: 'c-discord-onmsg-router', from: 'discord:onMessage', to: 'router:getProject', label: 'onMessage()', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-router-getproj-session', from: 'router:getProject', to: 'session:invoke', label: 'getProject→invoke', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-session-invoke-spawn', from: 'session:invoke', to: 'session:spawn', label: 'queue→spawn', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-session-spawn-claude', from: 'session:spawn', to: 'claude:StreamInitEvent', label: 'spawn(claude)', style: 'solid', color: '#fb923c' },
+  { id: 'c-claude-result-session', from: 'claude:StreamResultEvent', to: 'session:onEvent', label: 'StreamResult', style: 'dashed', color: '#fb923c' },
+  { id: 'c-session-event-reactions', from: 'session:onEvent', to: 'formatter:extractReactions', label: 'SessionResult', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-fmt-reactions-output', from: 'formatter:extractReactions', to: 'formatter:formatOutput', label: 'cleanText', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-fmt-output-images', from: 'formatter:formatOutput', to: 'formatter:extractImages', label: 'chunks', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-fmt-images-discord-edit', from: 'formatter:extractImages', to: 'discord:editMessage', label: 'formatted', style: 'dashed', color: '#fb923c' },
+  { id: 'c-discord-edit-send', from: 'discord:editMessage', to: 'discord:sendMessage', label: 'chunks', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-discord-send-upload', from: 'discord:sendMessage', to: 'discord:uploadFile', label: 'attachments', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-discord-upload-react', from: 'discord:uploadFile', to: 'discord:addReaction', label: 'reactions', style: 'solid', color: '#4cc9f0' },
+
+  // ── Persist ──
+  { id: 'c-session-invoke-upsert', from: 'session:invoke', to: 'store:upsertThread', label: 'upsertThread', style: 'dashed', color: '#3f3f46' },
+  { id: 'c-session-event-savemsg', from: 'session:onEvent', to: 'store:saveMessage', label: 'saveMessage', style: 'dashed', color: '#3f3f46' },
+
+  // ── Lark flow ──
+  { id: 'c-lark-onmsg-router', from: 'lark:onMessage', to: 'router:getProject', label: 'onMessage()', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-fmt-images-lark-edit', from: 'formatter:extractImages', to: 'lark:editMessage', label: 'formatted', style: 'dashed', color: '#fb923c' },
+
+  // ── Web flow ──
+  { id: 'c-webui-send-wa', from: 'webui:chat.send', to: 'webadapter:sendMessage', label: 'WS chat.send', style: 'solid', color: '#34d399' },
+  { id: 'c-wa-sendmsg-router', from: 'webadapter:sendMessage', to: 'router:getProject', label: 'getProject()', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-wa-sendmsg-session', from: 'webadapter:sendMessage', to: 'session:invoke', label: 'invoke()', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-fmt-images-wa-edit', from: 'formatter:extractImages', to: 'webadapter:editMessage', label: 'formatted', style: 'dashed', color: '#fb923c' },
+  { id: 'c-wa-edit-done', from: 'webadapter:editMessage', to: 'webadapter:sendDone', label: 'chat.done', style: 'solid', color: '#34d399' },
+
+  // ── Abort flow ──
+  { id: 'c-webui-abort-wa', from: 'webui:chat.abort', to: 'webadapter:onAbort', label: 'WS chat.abort', style: 'solid', color: '#fb923c' },
+  { id: 'c-wa-abort-session', from: 'webadapter:onAbort', to: 'session:abort', label: 'abort(threadKey)', style: 'dashed', color: '#fb923c' },
+
+  // ── API flow ──
+  { id: 'c-wa-sendmsg-api', from: 'webadapter:sendMessage', to: 'api:handleApi', label: '/api/* routes', style: 'solid', color: '#a78bfa' },
+  { id: 'c-api-list-sessions', from: 'api:handleApi', to: 'store:listSessions', label: 'listSessions()', style: 'dashed', color: '#3f3f46' },
+  { id: 'c-api-daily-tokens', from: 'api:handleApi', to: 'store:getDailyTokens', label: 'getDailyTokens()', style: 'dashed', color: '#3f3f46' },
+  { id: 'c-api-load-config', from: 'api:handleApi', to: 'config:loadConfig', label: 'loadConfig()', style: 'solid', color: '#a78bfa' },
+  { id: 'c-api-save-config', from: 'api:handleApi', to: 'config:saveConfig', label: 'saveConfig()', style: 'solid', color: '#a78bfa' },
+
+  // ── Startup flow ──
+  { id: 'c-cli-loadconfig', from: 'cli:main', to: 'config:loadConfig', label: 'loadConfig()', style: 'solid', color: '#34d399' },
+  { id: 'c-cli-upsert', from: 'cli:main', to: 'store:upsertThread', label: 'init DB', style: 'dashed', color: '#3f3f46' },
+  { id: 'c-cli-invoke', from: 'cli:main', to: 'session:invoke', label: 'via adapters', style: 'solid', color: '#4cc9f0' },
+  { id: 'c-cli-recover', from: 'cli:main', to: 'cli:recoverPendingRestarts', label: 'recover', style: 'solid', color: '#34d399' },
+  { id: 'c-recover-getpending', from: 'cli:recoverPendingRestarts', to: 'store:getPendingRestarts', label: 'getPending()', style: 'dashed', color: '#3f3f46' },
+  { id: 'c-recover-invoke', from: 'cli:recoverPendingRestarts', to: 'session:invoke', label: 'invoke(resume)', style: 'solid', color: '#4cc9f0' },
+
+  // ── Shutdown flow ──
+  { id: 'c-shutdown-mark', from: 'cli:gracefulShutdown', to: 'store:markPendingRestart', label: 'markPending()', style: 'dashed', color: '#3f3f46' },
+  { id: 'c-shutdown-abortall', from: 'cli:gracefulShutdown', to: 'session:abortAll', label: 'abortAll()', style: 'dashed', color: '#fb923c' },
+];
+
+// ============================================================
+// CHAIN DEFINITIONS
+// ============================================================
+const CHAINS = {
+  'discord-message': {
+    name: 'Discord Message',
+    desc: 'discord:onMessage -> ... -> addReaction',
+    fns: ['discord:onMessage', 'router:getProject', 'session:invoke', 'store:upsertThread', 'session:spawn', 'claude:StreamInitEvent', 'claude:StreamAssistantEvent', 'claude:StreamResultEvent', 'session:onEvent', 'store:saveMessage', 'formatter:extractReactions', 'formatter:formatOutput', 'formatter:extractImages', 'discord:editMessage', 'discord:sendMessage', 'discord:uploadFile', 'discord:addReaction'],
+    connections: ['c-discord-onmsg-router', 'c-router-getproj-session', 'c-session-invoke-upsert', 'c-session-invoke-spawn', 'c-session-spawn-claude', 'c-claude-result-session', 'c-session-event-savemsg', 'c-session-event-reactions', 'c-fmt-reactions-output', 'c-fmt-output-images', 'c-fmt-images-discord-edit', 'c-discord-edit-send', 'c-discord-send-upload', 'c-discord-upload-react']
+  },
+  'lark-message': {
+    name: 'Lark Message',
+    desc: 'lark:onMessage -> ... -> editMessage',
+    fns: ['lark:onMessage', 'router:getProject', 'session:invoke', 'store:upsertThread', 'session:spawn', 'claude:StreamInitEvent', 'claude:StreamAssistantEvent', 'claude:StreamResultEvent', 'session:onEvent', 'store:saveMessage', 'formatter:extractReactions', 'formatter:formatOutput', 'formatter:extractImages', 'lark:editMessage'],
+    connections: ['c-lark-onmsg-router', 'c-router-getproj-session', 'c-session-invoke-upsert', 'c-session-invoke-spawn', 'c-session-spawn-claude', 'c-claude-result-session', 'c-session-event-savemsg', 'c-session-event-reactions', 'c-fmt-reactions-output', 'c-fmt-output-images', 'c-fmt-images-lark-edit']
+  },
+  'web-message': {
+    name: 'Web Message',
+    desc: 'webui:chat.send -> ... -> sendDone',
+    fns: ['webui:chat.send', 'webadapter:sendMessage', 'router:getProject', 'session:invoke', 'store:upsertThread', 'session:spawn', 'claude:StreamInitEvent', 'claude:StreamAssistantEvent', 'claude:StreamResultEvent', 'session:onEvent', 'store:saveMessage', 'formatter:extractReactions', 'formatter:formatOutput', 'formatter:extractImages', 'webadapter:editMessage', 'webadapter:sendDone'],
+    connections: ['c-webui-send-wa', 'c-wa-sendmsg-router', 'c-wa-sendmsg-session', 'c-session-invoke-upsert', 'c-session-invoke-spawn', 'c-session-spawn-claude', 'c-claude-result-session', 'c-session-event-savemsg', 'c-session-event-reactions', 'c-fmt-reactions-output', 'c-fmt-output-images', 'c-fmt-images-wa-edit', 'c-wa-edit-done']
+  },
+  'web-subscribe': {
+    name: 'Web Subscribe',
+    desc: 'webui:chat.subscribe -> ... -> chat.recover',
+    fns: ['webui:chat.subscribe', 'webadapter:sendToThread'],
+    connections: []
+  },
+  'web-abort': {
+    name: 'Web Abort',
+    desc: 'webui:chat.abort -> ... -> session:abort',
+    fns: ['webui:chat.abort', 'webadapter:onAbort', 'session:abort'],
+    connections: ['c-webui-abort-wa', 'c-wa-abort-session']
+  },
+  'rest-api': {
+    name: 'REST API Call',
+    desc: '/api/* -> handleApi -> Store/Config',
+    fns: ['webadapter:sendMessage', 'api:handleApi', 'store:listSessions', 'store:getDailyTokens', 'config:loadConfig', 'config:saveConfig'],
+    connections: ['c-wa-sendmsg-api', 'c-api-list-sessions', 'c-api-daily-tokens', 'c-api-load-config', 'c-api-save-config']
+  },
+  'management-cmd': {
+    name: 'Management Cmd',
+    desc: '/im-* -> parseManagementCommand -> execute',
+    fns: ['discord:onMessage', 'router:getProject', 'router:parseManagementCommand'],
+    connections: ['c-discord-onmsg-router']
+  },
+  'cli-startup': {
+    name: 'CLI Startup',
+    desc: 'main() -> loadConfig -> init adapters',
+    fns: ['cli:main', 'config:loadConfig', 'store:upsertThread', 'session:invoke', 'cli:recoverPendingRestarts', 'store:getPendingRestarts'],
+    connections: ['c-cli-loadconfig', 'c-cli-upsert', 'c-cli-invoke', 'c-cli-recover', 'c-recover-getpending', 'c-recover-invoke']
+  },
+  'graceful-shutdown': {
+    name: 'Graceful Shutdown',
+    desc: 'SIGTERM -> markPendingRestart -> abortAll',
+    fns: ['cli:gracefulShutdown', 'store:markPendingRestart', 'session:abortAll'],
+    connections: ['c-shutdown-mark', 'c-shutdown-abortall']
+  },
+  'pending-recovery': {
+    name: 'Pending Recovery',
+    desc: 'startup -> getPendingRestarts -> invoke',
+    fns: ['cli:recoverPendingRestarts', 'store:getPendingRestarts', 'session:invoke'],
+    connections: ['c-recover-getpending', 'c-recover-invoke']
+  },
+};
+
+// ============================================================
+// RENDER NODES
+// ============================================================
+const canvas = document.getElementById('canvas');
+const nodeElements = {};
+
+NODES.forEach(n => {
+  const el = document.createElement('div');
+  el.className = 'node left-accent';
+  el.id = 'node-' + n.id;
+  el.style.cssText = `left:${n.x}px; top:${n.y}px; width:${n.w}px; border-left-color:${n.color};`;
+  el.innerHTML = `
+    <div class="node-head">
+      <span class="node-dot" style="background:${n.dot}"></span>
+      <span class="node-title">${n.title}</span>
+      <span class="node-badge">${n.badge}</span>
+    </div>
+    <div class="node-body">${n.html}</div>`;
+  canvas.appendChild(el);
+  nodeElements[n.id] = el;
+});
+
+// ============================================================
+// RENDER ENTRY POINT PANEL
+// ============================================================
+const entryBody = document.getElementById('entry-panel-body');
+Object.entries(CHAINS).forEach(([key, chain]) => {
+  const item = document.createElement('div');
+  item.className = 'entry-item';
+  item.dataset.chain = key;
+  item.innerHTML = `<span class="entry-dot"></span><span class="entry-name">${chain.name}</span><span class="entry-path">${chain.desc}</span>`;
+  item.addEventListener('click', () => toggleChain(key));
+  entryBody.appendChild(item);
+});
+
+let entryPanelCollapsed = false;
+function toggleEntryPanel() {
+  entryPanelCollapsed = !entryPanelCollapsed;
+  document.getElementById('entry-panel-body').classList.toggle('collapsed', entryPanelCollapsed);
+  document.getElementById('speed-control').style.display = entryPanelCollapsed ? 'none' : 'flex';
+  document.querySelector('#entry-panel-header .toggle-btn').textContent = entryPanelCollapsed ? '+' : '_';
+}
+
+// Make entry panel draggable
+(function() {
+  const panel = document.getElementById('entry-panel');
+  const header = document.getElementById('entry-panel-header');
+  let dragging = false, dx = 0, dy = 0;
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('toggle-btn')) return;
+    dragging = true;
+    const rect = panel.getBoundingClientRect();
+    dx = e.clientX - rect.left;
+    dy = e.clientY - rect.top;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    panel.style.left = (e.clientX - dx) + 'px';
+    panel.style.top = (e.clientY - dy) + 'px';
+    panel.style.right = 'auto';
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+})();
+
+// ============================================================
+// FN-ANCHOR POSITION CALCULATION
+// ============================================================
+function getFnAnchorPosition(fnId) {
+  const el = document.querySelector(`.fn-anchor[data-fn="${fnId}"]`);
+  if (!el) return null;
+
+  // Get position relative to canvas by walking up the DOM
+  const canvasEl = document.getElementById('canvas');
+  const canvasRect = canvasEl.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+
+  // Convert screen coordinates to canvas coordinates (compensate for transform)
+  const x = (elRect.left + elRect.width / 2 - canvasRect.left) / scale;
+  const y = (elRect.top + elRect.height / 2 - canvasRect.top) / scale;
+
+  return { x, y, w: elRect.width / scale, h: elRect.height / scale };
+}
+
+// Get the node that contains a fn-anchor
+function getNodeForFn(fnId) {
+  const parts = fnId.split(':');
+  return parts[0];
+}
+
+// Find a reasonable connection point on the node edge for a function
+function getFnEdgePoint(fnId, side) {
+  const pos = getFnAnchorPosition(fnId);
+  if (!pos) return null;
+
+  const nodeId = getNodeForFn(fnId);
+  const nodeData = NODES.find(n => n.id === nodeId);
+  if (!nodeData) return null;
+
+  const nodeEl = nodeElements[nodeId];
+  const nh = nodeEl.offsetHeight;
+
+  switch (side) {
+    case 'right':
+      return { x: nodeData.x + nodeData.w, y: pos.y };
+    case 'left':
+      return { x: nodeData.x, y: pos.y };
+    case 'top':
+      return { x: pos.x, y: nodeData.y };
+    case 'bottom':
+      return { x: pos.x, y: nodeData.y + nh };
+    default:
+      return pos;
+  }
+}
+
+// Determine which side of a node a function should connect from/to
+function determineSide(fromNodeId, toNodeId) {
+  const fromNode = NODES.find(n => n.id === fromNodeId);
+  const toNode = NODES.find(n => n.id === toNodeId);
+  if (!fromNode || !toNode) return { fromSide: 'right', toSide: 'left' };
+
+  const fromCX = fromNode.x + fromNode.w / 2;
+  const toNodeEl = nodeElements[toNode.id];
+  const fromNodeEl = nodeElements[fromNode.id];
+  const fromCY = fromNode.y + (fromNodeEl ? fromNodeEl.offsetHeight / 2 : 200);
+  const toCX = toNode.x + toNode.w / 2;
+  const toCY = toNode.y + (toNodeEl ? toNodeEl.offsetHeight / 2 : 200);
+
+  const dx = toCX - fromCX;
+  const dy = toCY - fromCY;
+
+  // If same node, use internal routing
+  if (fromNodeId === toNodeId) {
+    return { fromSide: 'internal', toSide: 'internal' };
+  }
+
+  let fromSide, toSide;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    fromSide = dx > 0 ? 'right' : 'left';
+    toSide = dx > 0 ? 'left' : 'right';
+  } else {
+    fromSide = dy > 0 ? 'bottom' : 'top';
+    toSide = dy > 0 ? 'top' : 'bottom';
+  }
+
+  return { fromSide, toSide };
+}
+
+// ============================================================
+// RENDER CONNECTIONS (SVG)
+// ============================================================
+const svgPathElements = {};
+
+function renderConnections() {
+  const svg = document.getElementById('connections');
+  let html = `<defs>
+    <marker id="arrow-cyan" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#4cc9f0"/>
+    </marker>
+    <marker id="arrow-dim" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3f3f46"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#fb923c"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#34d399"/>
+    </marker>
+    <marker id="arrow-yellow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#fbbf24"/>
+    </marker>
+    <filter id="glow-dot" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>`;
+
+  FN_CONNECTIONS.forEach(c => {
+    const fromNodeId = getNodeForFn(c.from);
+    const toNodeId = getNodeForFn(c.to);
+    const { fromSide, toSide } = determineSide(fromNodeId, toNodeId);
+
+    // For same-node connections, draw a small arc
+    if (fromSide === 'internal') {
+      const p1 = getFnAnchorPosition(c.from);
+      const p2 = getFnAnchorPosition(c.to);
+      if (!p1 || !p2) return;
+
+      const node = NODES.find(n => n.id === fromNodeId);
+      const arcX = node.x + node.w + 30;
+      const strokeDash = c.style === 'dashed' ? 'stroke-dasharray="6,4"' : '';
+      const markerColor = getMarkerColor(c.color);
+      const sw = c.color === '#3f3f46' ? '1' : '1.5';
+
+      html += `<path id="path-${c.id}" data-conn-id="${c.id}" d="M${node.x + node.w},${p1.y} C${arcX},${p1.y} ${arcX},${p2.y} ${node.x + node.w},${p2.y}"
+        fill="none" stroke="${c.color}" stroke-width="${sw}" ${strokeDash}
+        marker-end="url(#arrow-${markerColor})" opacity="0.7"/>`;
+
+      const mx = arcX - 8;
+      const my = (p1.y + p2.y) / 2;
+      html += renderLabel(mx, my, c.label, c.color);
+      return;
+    }
+
+    const p1 = getFnEdgePoint(c.from, fromSide);
+    const p2 = getFnEdgePoint(c.to, toSide);
+
+    if (!p1 || !p2) return;
+
+    const dx = Math.abs(p2.x - p1.x);
+    const dy = Math.abs(p2.y - p1.y);
+    const offset = Math.max(40, Math.min(120, dx * 0.4, dy * 0.4));
+
+    let cp1 = {...p1}, cp2 = {...p2};
+    if (fromSide === 'right') cp1.x += offset;
+    else if (fromSide === 'left') cp1.x -= offset;
+    else if (fromSide === 'top') cp1.y -= offset;
+    else if (fromSide === 'bottom') cp1.y += offset;
+
+    if (toSide === 'right') cp2.x += offset;
+    else if (toSide === 'left') cp2.x -= offset;
+    else if (toSide === 'top') cp2.y -= offset;
+    else if (toSide === 'bottom') cp2.y += offset;
+
+    const strokeDash = c.style === 'dashed' ? 'stroke-dasharray="6,4"' : '';
+    const markerColor = getMarkerColor(c.color);
+    const sw = c.color === '#3f3f46' ? '1' : '1.5';
+
+    html += `<path id="path-${c.id}" data-conn-id="${c.id}" d="M${p1.x},${p1.y} C${cp1.x},${cp1.y} ${cp2.x},${cp2.y} ${p2.x},${p2.y}"
+      fill="none" stroke="${c.color}" stroke-width="${sw}" ${strokeDash}
+      marker-end="url(#arrow-${markerColor})" opacity="0.7"/>`;
+
+    const mx = (p1.x + p2.x + cp1.x + cp2.x) / 4;
+    const my = (p1.y + p2.y + cp1.y + cp2.y) / 4;
+    html += renderLabel(mx, my, c.label, c.color);
+  });
+
+  // Add animation group container
+  html += '<g id="animation-layer"></g>';
+
+  svg.innerHTML = html;
+}
+
+function getMarkerColor(color) {
+  if (color === '#4cc9f0') return 'cyan';
+  if (color === '#3f3f46') return 'dim';
+  if (color === '#a78bfa') return 'purple';
+  if (color === '#34d399') return 'green';
+  if (color === '#fb923c') return 'orange';
+  return 'cyan';
+}
+
+function renderLabel(mx, my, label, color) {
+  const labelW = label.length * 5.5 + 8;
+  return `<rect x="${mx - 2}" y="${my - 9}" rx="3" ry="3"
+    width="${labelW}" height="14"
+    fill="#09090b" fill-opacity="0.85" stroke="${color}" stroke-width="0.5" stroke-opacity="0.3"/>
+  <text x="${mx + 2}" y="${my + 2}" fill="${color}" font-size="8.5"
+    font-family="'JetBrains Mono', monospace" opacity="0.85">${label}</text>`;
+}
+
+// Render after layout settles
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    renderConnections();
+    updateMinimap();
+    fitToScreen();
+  });
+});
+
+// ============================================================
+// CHAIN HIGHLIGHTING
+// ============================================================
+let activeChain = null;
+let animationFrameId = null;
+let animSpeed = 1;
+
+function setSpeed(speed, btn) {
+  animSpeed = speed;
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function toggleChain(chainId) {
+  if (activeChain === chainId) {
+    clearChain();
+    return;
+  }
+  activateChain(chainId);
+}
+
+function activateChain(chainId) {
+  clearChain();
+  activeChain = chainId;
+  const chain = CHAINS[chainId];
+  if (!chain) return;
+
+  const chainFnSet = new Set(chain.fns);
+  const chainConnSet = new Set(chain.connections);
+
+  // Collect nodes that contain chain functions
+  const chainNodeIds = new Set();
+  chain.fns.forEach(fnId => {
+    chainNodeIds.add(getNodeForFn(fnId));
+  });
+
+  // Dim all nodes, highlight chain nodes
+  Object.entries(nodeElements).forEach(([id, el]) => {
+    if (chainNodeIds.has(id)) {
+      el.classList.add('chain-node');
+      el.classList.remove('dimmed');
+    } else {
+      el.classList.add('dimmed');
+      el.classList.remove('chain-node');
+    }
+  });
+
+  // Highlight fn-anchors
+  document.querySelectorAll('.fn-anchor').forEach(el => {
+    const fnId = el.dataset.fn;
+    if (chainFnSet.has(fnId)) {
+      el.classList.add('highlighted', 'chain-active');
+    }
+  });
+
+  // Highlight / dim connection paths
+  document.querySelectorAll('#connections path[data-conn-id]').forEach(pathEl => {
+    const connId = pathEl.dataset.connId;
+    if (chainConnSet.has(connId)) {
+      pathEl.classList.add('chain-path');
+      pathEl.classList.remove('dimmed');
+      pathEl.setAttribute('stroke', '#fbbf24');
+      pathEl.setAttribute('stroke-width', '2.5');
+      pathEl.setAttribute('opacity', '1');
+      pathEl.setAttribute('marker-end', 'url(#arrow-yellow)');
+      pathEl.removeAttribute('stroke-dasharray');
+    } else {
+      pathEl.classList.add('dimmed');
+      pathEl.classList.remove('chain-path');
+      pathEl.setAttribute('opacity', '0.05');
+    }
+  });
+
+  // Dim labels (rects and texts that follow paths)
+  const svg = document.getElementById('connections');
+  const allRects = svg.querySelectorAll('rect');
+  const allTexts = svg.querySelectorAll('text');
+  // We need to dim non-chain labels. Labels follow their paths in order.
+  // Since we rebuild SVG, labels are interleaved with paths.
+  // Simple approach: dim all rects/texts, then un-dim ones near chain paths.
+  allRects.forEach(r => r.setAttribute('opacity', '0.05'));
+  allTexts.forEach(t => t.setAttribute('opacity', '0.05'));
+
+  // Un-dim labels that belong to chain connections
+  // Re-traverse the SVG: for each chain path, the next rect+text siblings are its label
+  document.querySelectorAll('#connections path[data-conn-id]').forEach(pathEl => {
+    const connId = pathEl.dataset.connId;
+    if (chainConnSet.has(connId)) {
+      let next = pathEl.nextElementSibling;
+      if (next && next.tagName === 'rect') {
+        next.setAttribute('opacity', '0.85');
+        next.setAttribute('stroke', '#fbbf24');
+        let textEl = next.nextElementSibling;
+        if (textEl && textEl.tagName === 'text') {
+          textEl.setAttribute('opacity', '1');
+          textEl.setAttribute('fill', '#fbbf24');
+        }
+      }
+    }
+  });
+
+  // Update entry panel
+  document.querySelectorAll('.entry-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.chain === chainId);
+  });
+
+  // Start animation
+  startChainAnimation(chainId);
+}
+
+function clearChain() {
+  activeChain = null;
+  stopChainAnimation();
+
+  // Remove all dimming/highlighting classes
+  Object.values(nodeElements).forEach(el => {
+    el.classList.remove('dimmed', 'chain-node');
+  });
+
+  document.querySelectorAll('.fn-anchor').forEach(el => {
+    el.classList.remove('highlighted', 'chain-active');
+  });
+
+  // Re-render connections to restore original state
+  renderConnections();
+
+  // Update entry panel
+  document.querySelectorAll('.entry-item').forEach(item => {
+    item.classList.remove('active');
+  });
+}
+
+// Escape key clears chain
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && activeChain) {
+    clearChain();
+  }
+});
+
+// ============================================================
+// YELLOW LIGHT FLOW ANIMATION
+// ============================================================
+const TAIL_COUNT = 8;
+const TAIL_SPACING = 12;
+
+function startChainAnimation(chainId) {
+  stopChainAnimation();
+  const chain = CHAINS[chainId];
+  if (!chain || chain.connections.length === 0) return;
+
+  const pathEls = chain.connections.map(connId => {
+    return document.getElementById('path-' + connId);
+  }).filter(Boolean);
+
+  if (pathEls.length === 0) return;
+
+  // Pre-compute total length and cumulative lengths
+  const pathLengths = pathEls.map(p => p.getTotalLength());
+  const totalLength = pathLengths.reduce((a, b) => a + b, 0);
+  const cumulativeLengths = [];
+  let cumulative = 0;
+  pathLengths.forEach(l => {
+    cumulativeLengths.push(cumulative);
+    cumulative += l;
+  });
+
+  // Create glow dot and tail dots in the animation layer
+  const animLayer = document.getElementById('animation-layer');
+  if (!animLayer) return;
+
+  // Create tail dots (trailing, decreasing opacity)
+  const dots = [];
+  for (let i = TAIL_COUNT; i >= 0; i--) {
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const opacity = i === 0 ? 1.0 : (1.0 - (i / (TAIL_COUNT + 1))) * 0.6;
+    const r = i === 0 ? 6 : Math.max(2, 6 - i * 0.5);
+    dot.setAttribute('r', String(r));
+    dot.setAttribute('fill', '#fbbf24');
+    dot.setAttribute('opacity', String(opacity));
+    if (i === 0) {
+      dot.setAttribute('filter', 'url(#glow-dot)');
+    }
+    animLayer.appendChild(dot);
+    dots.push({ el: dot, tailOffset: i * TAIL_SPACING });
+  }
+
+  let progress = 0;
+  const baseSpeed = 2.5; // pixels per frame at 1x
+
+  function getPointAtGlobalLength(len) {
+    // Wrap around
+    len = ((len % totalLength) + totalLength) % totalLength;
+    for (let i = 0; i < pathEls.length; i++) {
+      if (len <= cumulativeLengths[i] + pathLengths[i]) {
+        const localLen = len - cumulativeLengths[i];
+        return pathEls[i].getPointAtLength(localLen);
+      }
+    }
+    return pathEls[pathEls.length - 1].getPointAtLength(pathLengths[pathLengths.length - 1]);
+  }
+
+  function step() {
+    progress += baseSpeed * animSpeed;
+    if (progress > totalLength) {
+      progress -= totalLength;
+    }
+
+    dots.forEach(({ el, tailOffset }) => {
+      const pt = getPointAtGlobalLength(progress - tailOffset);
+      el.setAttribute('cx', String(pt.x));
+      el.setAttribute('cy', String(pt.y));
+    });
+
+    animationFrameId = requestAnimationFrame(step);
+  }
+
+  animationFrameId = requestAnimationFrame(step);
+}
+
+function stopChainAnimation() {
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+  // Remove dots from animation layer
+  const animLayer = document.getElementById('animation-layer');
+  if (animLayer) {
+    animLayer.innerHTML = '';
+  }
+}
+
+// ============================================================
+// PAN & ZOOM
+// ============================================================
+let scale = 1;
+let panX = 0, panY = 0;
+let isDragging = false;
+let dragStartX, dragStartY, panStartX, panStartY;
+
+const viewport = document.getElementById('viewport');
+
+function applyTransform() {
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  document.getElementById('zoom-label').textContent = Math.round(scale * 100) + '%';
+  updateMinimap();
+}
+
+function zoomBy(delta, cx, cy) {
+  const oldScale = scale;
+  scale = Math.max(0.1, Math.min(3, scale + delta));
+  if (cx !== undefined && cy !== undefined) {
+    panX = cx - (cx - panX) * (scale / oldScale);
+    panY = cy - (cy - panY) * (scale / oldScale);
+  }
+  applyTransform();
+  // Re-render connections on zoom since fn positions change relative to canvas
+  scheduleConnectionRender();
+}
+
+let renderTimeout = null;
+function scheduleConnectionRender() {
+  if (renderTimeout) clearTimeout(renderTimeout);
+  renderTimeout = setTimeout(() => {
+    const wasActive = activeChain;
+    renderConnections();
+    if (wasActive) {
+      activateChain(wasActive);
+    }
+  }, 50);
+}
+
+function resetView() {
+  scale = 1; panX = 0; panY = 0;
+  applyTransform();
+  scheduleConnectionRender();
+}
+
+function fitToScreen() {
+  const vw = viewport.clientWidth;
+  const vh = viewport.clientHeight;
+  let maxX = 0, maxY = 0;
+  NODES.forEach(n => {
+    const el = nodeElements[n.id];
+    maxX = Math.max(maxX, n.x + n.w + 40);
+    maxY = Math.max(maxY, n.y + el.offsetHeight + 40);
+  });
+  const sx = vw / maxX;
+  const sy = vh / maxY;
+  scale = Math.min(sx, sy, 1) * 0.95;
+  panX = (vw - maxX * scale) / 2;
+  panY = (vh - maxY * scale) / 2;
+  applyTransform();
+  scheduleConnectionRender();
+}
+
+// Mouse wheel zoom
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const delta = e.deltaY > 0 ? -0.08 : 0.08;
+  zoomBy(delta, cx, cy);
+}, { passive: false });
+
+// Drag to pan
+viewport.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  // Don't start drag if clicking on fn-anchor
+  if (e.target.closest('.fn-anchor')) return;
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  panStartX = panX; panStartY = panY;
+  viewport.classList.add('dragging');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  panX = panStartX + (e.clientX - dragStartX);
+  panY = panStartY + (e.clientY - dragStartY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  viewport.classList.remove('dragging');
+});
+
+// Touch support
+let lastTouchDist = 0;
+let lastTouchMid = null;
+viewport.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    isDragging = true;
+    dragStartX = e.touches[0].clientX;
+    dragStartY = e.touches[0].clientY;
+    panStartX = panX; panStartY = panY;
+  } else if (e.touches.length === 2) {
+    isDragging = false;
+    const dx = e.touches[1].clientX - e.touches[0].clientX;
+    const dy = e.touches[1].clientY - e.touches[0].clientY;
+    lastTouchDist = Math.sqrt(dx*dx + dy*dy);
+    lastTouchMid = {
+      x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+      y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+    };
+  }
+}, { passive: true });
+viewport.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1 && isDragging) {
+    panX = panStartX + (e.touches[0].clientX - dragStartX);
+    panY = panStartY + (e.touches[0].clientY - dragStartY);
+    applyTransform();
+  } else if (e.touches.length === 2) {
+    const dx = e.touches[1].clientX - e.touches[0].clientX;
+    const dy = e.touches[1].clientY - e.touches[0].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const mid = {
+      x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+      y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+    };
+    if (lastTouchDist > 0) {
+      const rect = viewport.getBoundingClientRect();
+      const cx = mid.x - rect.left;
+      const cy = mid.y - rect.top;
+      const delta = (dist - lastTouchDist) * 0.005;
+      zoomBy(delta, cx, cy);
+    }
+    lastTouchDist = dist;
+    lastTouchMid = mid;
+  }
+}, { passive: false });
+viewport.addEventListener('touchend', () => {
+  isDragging = false;
+  lastTouchDist = 0;
+});
+
+// Keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') return; // Handled by chain clear
+  const step = 60;
+  switch(e.key) {
+    case '+': case '=': zoomBy(0.15); break;
+    case '-': zoomBy(-0.15); break;
+    case '0': resetView(); break;
+    case 'ArrowUp': panY += step; applyTransform(); break;
+    case 'ArrowDown': panY -= step; applyTransform(); break;
+    case 'ArrowLeft': panX += step; applyTransform(); break;
+    case 'ArrowRight': panX -= step; applyTransform(); break;
+  }
+});
+
+// ============================================================
+// MINI-MAP
+// ============================================================
+function updateMinimap() {
+  const mmCanvas = document.getElementById('minimap-canvas');
+  const ctx = mmCanvas.getContext('2d');
+  const mmW = 200, mmH = 180;
+  mmCanvas.width = mmW; mmCanvas.height = mmH;
+
+  let maxX = 0, maxY = 0;
+  NODES.forEach(n => {
+    const el = nodeElements[n.id];
+    maxX = Math.max(maxX, n.x + n.w);
+    maxY = Math.max(maxY, n.y + (el ? el.offsetHeight : 200));
+  });
+  maxX += 80; maxY += 80;
+
+  const sx = mmW / maxX;
+  const sy = mmH / maxY;
+  const s = Math.min(sx, sy);
+
+  ctx.clearRect(0, 0, mmW, mmH);
+
+  NODES.forEach(n => {
+    const el = nodeElements[n.id];
+    const h = el ? el.offsetHeight : 200;
+    ctx.fillStyle = n.color + '40';
+    ctx.strokeStyle = n.color + '80';
+    ctx.lineWidth = 0.5;
+    ctx.fillRect(n.x * s, n.y * s, n.w * s, h * s);
+    ctx.strokeRect(n.x * s, n.y * s, n.w * s, h * s);
+  });
+
+  const vw = viewport.clientWidth;
+  const vh = viewport.clientHeight;
+  const vpEl = document.getElementById('minimap-viewport');
+  const vx = (-panX / scale) * s;
+  const vy = (-panY / scale) * s;
+  const vww = (vw / scale) * s;
+  const vhh = (vh / scale) * s;
+  vpEl.style.left = vx + 'px';
+  vpEl.style.top = vy + 'px';
+  vpEl.style.width = Math.min(vww, mmW) + 'px';
+  vpEl.style.height = Math.min(vhh, mmH) + 'px';
+}
+
+// Resize handler
+window.addEventListener('resize', () => {
+  updateMinimap();
+  scheduleConnectionRender();
+});
+
+// ============================================================
+// FN-ANCHOR CLICK HANDLER
+// ============================================================
+document.addEventListener('click', (e) => {
+  const anchor = e.target.closest('.fn-anchor');
+  if (!anchor) return;
+
+  e.stopPropagation();
+  const fnId = anchor.dataset.fn;
+
+  // Find which chains contain this function
+  for (const [chainId, chain] of Object.entries(CHAINS)) {
+    if (chain.fns.includes(fnId)) {
+      toggleChain(chainId);
+      return;
+    }
+  }
+});
+</script>
+</body>
+</html>

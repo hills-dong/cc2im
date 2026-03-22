@@ -60,7 +60,7 @@ export interface FormatterConfig {
 }
 
 export interface AppConfig {
-  lark: { appId: string; appSecret: string };
+  lark: { appId: string; appSecret: string; ownerOpenId?: string };
   discord: { token: string };
   projects: ProjectConfig[];
   claude: ClaudeConfig;
@@ -100,7 +100,7 @@ export interface PlatformAdapter {
   readonly platform: Platform;
   start(): Promise<void>;
   stop(): Promise<void>;
-  setupProject(project: ProjectConfig): Promise<ChannelInfo>;
+  setupProject(project: ProjectConfig, store?: any): Promise<ChannelInfo>;
   createThread(channelId: string, messageId: string): Promise<string>;
   getThreadName(threadId: string): Promise<string>;
   renameThread(threadId: string, name: string): Promise<void>;
