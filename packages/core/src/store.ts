@@ -106,6 +106,14 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, platform);
       CREATE INDEX IF NOT EXISTS idx_threads_project ON threads(project_name, status);
     `);
+
+    // Migrate existing databases: add columns that may not exist
+    const addColumn = (table: string, column: string, type: string) => {
+      try { this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`); } catch { /* already exists */ }
+    };
+    addColumn("messages", "cache_read_tokens", "INTEGER DEFAULT 0");
+    addColumn("messages", "cache_creation_tokens", "INTEGER DEFAULT 0");
+    addColumn("messages", "model", "TEXT");
   }
 
   upsertThread(threadId: string, platform: Platform, channelId: string, sessionId: string, projectName: string, name?: string): void {
