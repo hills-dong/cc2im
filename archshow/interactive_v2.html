@@ -154,7 +154,6 @@ body {
   align-items: stretch;
   transition: opacity 0.4s;
 }
-/* Clients lane: allow inner horizontal pairing */
 .lane .module-pair {
   display: flex;
   gap: 8px;
@@ -219,7 +218,6 @@ body {
   text-overflow: ellipsis;
   line-height: 1.3;
 }
-/* Extra gap for pills that have same-module connections */
 .fn-pill.has-vertical-conn {
   margin-bottom: 14px;
 }
@@ -250,7 +248,6 @@ body {
   margin-right: 3px;
   vertical-align: middle;
 }
-/* Info button on pill */
 .fn-info-btn {
   position: absolute;
   right: 2px;
@@ -349,11 +346,10 @@ body {
   opacity: 0.12;
   transition: opacity 0.4s, stroke-width 0.4s;
 }
-.conn-path.dependency { stroke: #fbbf24; }
-.conn-path.implements { stroke: #a78bfa; stroke-dasharray: 6 3; }
+.conn-path.request { stroke: #fbbf24; }
+.conn-path.response { stroke: #4cc9f0; }
 .conn-path.active { opacity: 0.6; stroke-width: 1.5; }
 .conn-path.dimmed { opacity: 0.02; }
-/* Function call type badges */
 .fn-badge {
   display: inline-block;
   font-size: 7px;
@@ -369,7 +365,6 @@ body {
 .fn-badge.badge-catch { background: #f8717130; color: #f87171; }
 .fn-badge.badge-cb { background: #a78bfa30; color: #a78bfa; }
 .fn-badge.badge-orch { background: #34d39930; color: #34d399; }
-/* Invisible wider hit area for dragging paths */
 .conn-hit {
   fill: none;
   stroke: transparent;
@@ -409,7 +404,6 @@ body {
   box-shadow: 0 0 8px rgba(251,191,36,0.15);
 }
 
-/* ── Pulse on step ── */
 @keyframes pill-pulse {
   0% { box-shadow: 0 0 0 0 rgba(251,191,36,0.4); }
   100% { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
@@ -443,18 +437,13 @@ body {
   <div class="legend-item"><div class="legend-dot" style="background:#5865F2"></div><span class="legend-label">Discord</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#2D60F5"></div><span class="legend-label">Lark</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#4cc9f0"></div><span class="legend-label">Web / Core</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div><span class="legend-label">Claude</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div><span class="legend-label">CLI Orchestrator</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div><span class="legend-label">Claude Process</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div><span class="legend-label">API Server</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#71717a"></div><span class="legend-label">Store / Config</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div><span class="legend-label">API</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div><span class="legend-label">CLI</span></div>
   <h3>Flow</h3>
-  <div class="legend-item"><div class="legend-line" style="background:#fbbf24"></div><span class="legend-label">Dependency (calls)</span></div>
-  <div class="legend-item"><div class="legend-line" style="background:#a78bfa; background-image:repeating-linear-gradient(90deg, #a78bfa 0 6px, transparent 6px 9px); background-color:transparent;"></div><span class="legend-label">Implements (registration)</span></div>
-  <h3>Badges</h3>
-  <div class="legend-item"><span class="fn-badge badge-orch" style="margin:0">orch</span><span class="legend-label">Orchestrator — coordinates multiple steps</span></div>
-  <div class="legend-item"><span class="fn-badge badge-cb" style="margin:0">cb</span><span class="legend-label">Callback — invoked asynchronously by caller</span></div>
-  <div class="legend-item"><span class="fn-badge badge-catch" style="margin:0">catch</span><span class="legend-label">Catch — error / exception handler</span></div>
-  <div class="legend-item"><span class="fn-badge badge-timer" style="margin:0">timer</span><span class="legend-label">Timer — periodic / scheduled execution</span></div>
+  <div class="legend-item"><div class="legend-line" style="background:#fbbf24"></div><span class="legend-label">Request (forward)</span></div>
+  <div class="legend-item"><div class="legend-line" style="background:#4cc9f0"></div><span class="legend-label">Response (return)</span></div>
   <h3>Entry Points</h3>
   <div class="legend-item"><div class="legend-entry-sample"></div><span class="legend-label">Clickable entry</span></div>
 </div>
@@ -466,11 +455,11 @@ body {
     <div id="swim-lanes"></div>
     <svg id="svg-overlay">
       <defs>
-        <marker id="arrow-dep" markerWidth="4" markerHeight="3.5" refX="3.5" refY="1.75" orient="auto">
+        <marker id="arrow-req" markerWidth="4" markerHeight="3.5" refX="3.5" refY="1.75" orient="auto">
           <polygon points="0 0, 4 1.75, 0 3.5" fill="#fbbf24" opacity="0.7"/>
         </marker>
-        <marker id="arrow-impl" markerWidth="5" markerHeight="4" refX="4.5" refY="2" orient="auto">
-          <polygon points="0 0, 5 2, 0 4" fill="none" stroke="#a78bfa" stroke-width="0.8"/>
+        <marker id="arrow-res" markerWidth="4" markerHeight="3.5" refX="3.5" refY="1.75" orient="auto">
+          <polygon points="0 0, 4 1.75, 0 3.5" fill="#4cc9f0" opacity="0.7"/>
         </marker>
         <filter id="glow-yellow" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
@@ -496,149 +485,149 @@ body {
 // ═══════════════════════════════════════════════════════════════════
 
 const MODULES = [
-  { id: 'discord', name: 'Discord', color: '#5865F2', path: 'cli/src/adapters/discord.ts' },
-  { id: 'lark', name: 'Lark', color: '#2D60F5', path: 'cli/src/adapters/lark.ts' },
-  { id: 'webui', name: 'Web UI', color: '#4cc9f0', path: 'ui/src/' },
-  { id: 'webadapter', name: 'WebAdapter', color: '#4cc9f0', path: 'cli/src/adapters/web.ts' },
-  { id: 'router', name: 'Router', color: '#4cc9f0', path: 'core/src/router.ts' },
-  { id: 'session', name: 'SessionMgr', color: '#4cc9f0', path: 'core/src/session.ts' },
-  { id: 'claude', name: 'Claude', color: '#fb923c', path: 'Claude Code stdout' },
-  { id: 'formatter', name: 'Formatter', color: '#4cc9f0', path: 'core/src/formatter.ts' },
-  { id: 'store', name: 'Store', color: '#71717a', path: 'core/src/store.ts' },
-  { id: 'config', name: 'Config', color: '#71717a', path: 'core/src/config.ts' },
-  { id: 'api', name: 'API', color: '#a78bfa', path: 'server/src/api.ts' },
-  { id: 'cli', name: 'CLI', color: '#34d399', path: 'cli/src/index.ts' },
-  { id: 'types', name: 'Types', color: '#71717a', path: 'core/src/types.ts' },
+  { id: 'discord', name: 'Discord', color: '#5865F2' },
+  { id: 'lark', name: 'Lark', color: '#2D60F5' },
+  { id: 'webui', name: 'Web UI', color: '#4cc9f0' },
+  { id: 'webadapter', name: 'WebAdapter', color: '#4cc9f0' },
+  { id: 'cli', name: 'CLI', color: '#34d399' },
+  { id: 'router', name: 'Router', color: '#4cc9f0' },
+  { id: 'api', name: 'API', color: '#a78bfa' },
+  { id: 'session', name: 'SessionMgr', color: '#4cc9f0' },
+  { id: 'formatter', name: 'Formatter', color: '#4cc9f0' },
+  { id: 'claude', name: 'Claude', color: '#fb923c' },
+  { id: 'store', name: 'Store', color: '#71717a' },
+  { id: 'config', name: 'Config', color: '#71717a' },
 ];
 
 const LANES = [
   {
     id: 'clients',
-    name: 'Clients',
+    name: 'Clients & Adapters',
     color: '#5865F2',
     layout: ['discord', 'lark', ['webui', 'webadapter']],
     modules: ['discord', 'lark', 'webui', 'webadapter'],
     flex: 4,
   },
   {
-    id: 'routing',
-    name: 'Server',
-    color: '#4cc9f0',
-    modules: ['cli', 'api'],
+    id: 'orchestration',
+    name: 'Orchestration',
+    color: '#34d399',
+    modules: ['cli', 'router', 'api'],
+    flex: 3,
+  },
+  {
+    id: 'persistence',
+    name: 'Persistence',
+    color: '#71717a',
+    modules: ['store', 'config'],
     flex: 2,
   },
   {
     id: 'processing',
-    name: 'Core',
+    name: 'Processing',
     color: '#4cc9f0',
-    modules: ['router', 'session', 'formatter', 'store', 'config', 'types'],
+    modules: ['session', 'formatter', 'claude'],
     flex: 3,
-  },
-  {
-    id: 'claude',
-    name: 'Agent',
-    color: '#fb923c',
-    modules: ['claude'],
-    flex: 1,
   },
 ];
 
 const MODULE_FUNCTIONS = {
   discord: [
-    { id: 'discord:onMessage', fn: 'onMessage()', entry: true, desc: 'Register incoming message callback. Constructs IncomingMessage with normalized fields (platform, channelId, threadId, content, attachments).', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:onReaction', fn: 'onReaction()', desc: 'Register reaction callback for thread management (/im-done, /im-reopen).', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:setupProject', fn: 'setupProject()', desc: 'Create or find cc2im-{project} text channel in Discord guild, register route.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:onMessage', fn: 'onMessage()', entry: true, desc: 'Discord messageCreate event handler. Filters bot/non-thread messages, normalizes to IncomingMessage with platform, channelId, threadId, content, attachments.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:onReaction', fn: 'onReaction()', desc: 'Discord messageReactionAdd handler. Forwards reaction events (emoji, messageId, threadId) to registered callback.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:onSlashCommand', fn: 'onSlashCommand()', entry: true, desc: 'Discord interactionCreate handler. Dispatches /im-done, /im-reopen, /im-list-projects, /im-add-project, /im-remove-project, /im-reload-config.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:setupProject', fn: 'setupProject()', desc: 'Create or find cc2im-{project} text channel in Discord guild with bot-only permissions.', file: 'cli/src/adapters/discord.ts' },
     { id: 'discord:createThread', fn: 'createThread()', desc: 'Start a Discord thread from the first user message in a channel.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:sendMessage', fn: 'sendMessage()', desc: 'Post message to channel/thread. Used for additional chunks [2/N]... when text is split.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:editMessage', fn: 'editMessage()', desc: 'Update existing message content. Used for streaming live updates (every 3s) and final response.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:uploadFile', fn: 'uploadFile()', desc: 'Attach image files or full-output.md when response exceeds 5x platform limit.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:sendMessage', fn: 'sendMessage()', desc: 'Post message to channel/thread. Returns messageId. Used for chunks [2/N] and initial Thinking indicator.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:editMessage', fn: 'editMessage()', desc: 'Update existing message content. Used for streaming live updates every 3s and final response.', file: 'cli/src/adapters/discord.ts' },
+    { id: 'discord:uploadFile', fn: 'uploadFile()', desc: 'Attach files (images or full-output.md) when response exceeds 5x platform limit.', file: 'cli/src/adapters/discord.ts' },
     { id: 'discord:addReaction', fn: 'addReaction()', desc: 'Add emoji reactions extracted via [react:emoji] pattern from Claude response.', file: 'cli/src/adapters/discord.ts' },
   ],
   lark: [
-    { id: 'lark:onMessage', fn: 'onMessage()', entry: true, desc: 'Register Lark WebSocket event callback. Constructs IncomingMessage from Lark event payload.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:setupProject', fn: 'setupProject()', desc: 'Create group chat per project via Lark API, register route.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:sendMessage', fn: 'sendMessage()', desc: 'Post message via Lark API. Used for additional chunks when text split.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:editMessage', fn: 'editMessage()', desc: 'Update message content via Lark API. Live update every 3s during streaming.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:onMessage', fn: 'onMessage()', entry: true, desc: 'Lark im.message.receive_v1 WebSocket event callback. Constructs IncomingMessage from Lark event payload.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:setupProject', fn: 'setupProject()', desc: 'Create or find group chat per project via Lark API, register route.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:sendMessage', fn: 'sendMessage()', desc: 'Post message via Lark im.message.create API.', file: 'cli/src/adapters/lark.ts' },
+    { id: 'lark:editMessage', fn: 'editMessage()', desc: 'Update message via Lark im.message.patch API. Live update every 3s during streaming.', file: 'cli/src/adapters/lark.ts' },
     { id: 'lark:uploadFile', fn: 'uploadFile()', desc: 'Upload files via Lark file API for image attachments.', file: 'cli/src/adapters/lark.ts' },
   ],
   webui: [
-    { id: 'webui:chat.send', fn: 'chat.send', entry: true, desc: 'WebSocket message from browser. Fields: project, message, threadKey?, sessionId?, model?. Auto-subscribes sender.', file: 'ui/src/lib/stores/chat.ts' },
-    { id: 'webui:chat.subscribe', fn: 'chat.subscribe', entry: true, desc: 'Subscribe to thread events. If stream active, server sends chat.recover with full buffered content.', file: 'ui/src/lib/stores/connection.ts' },
-    { id: 'webui:chat.abort', fn: 'chat.abort', entry: true, desc: 'Abort active Claude process for thread. Sends SIGTERM via SessionManager.', file: 'ui/src/lib/stores/chat.ts' },
-    { id: 'webui:fetch', fn: 'fetch(/api/*)', entry: true, desc: 'HTTP request from browser to REST API endpoints. Config, projects, sessions, stats.', file: 'ui/src/routes/' },
+    { id: 'webui:chat.send', fn: 'chat.send', entry: true, desc: 'WebSocket message from browser. Fields: project, message, threadKey. Auto-subscribes sender.', file: 'ui/src/lib/stores/chat.ts' },
+    { id: 'webui:chat.subscribe', fn: 'chat.subscribe', entry: true, desc: 'Subscribe to thread events. Server sends chat.recover with buffered content if stream active.', file: 'ui/src/lib/stores/connection.ts' },
+    { id: 'webui:chat.abort', fn: 'chat.abort', entry: true, desc: 'Abort active Claude process. Triggers abortHandler -> sessionManager.abort(threadKey).', file: 'ui/src/lib/stores/chat.ts' },
+    { id: 'webui:fetch', fn: 'fetch(/api/*)', entry: true, desc: 'HTTP requests to REST API: config, projects CRUD, sessions, stats/tokens, stats/overview.', file: 'ui/src/routes/' },
   ],
   webadapter: [
-    { id: 'webadapter:messageHandler', fn: 'messageHandler()', desc: 'Parse incoming WS message, auto-subscribe sender to thread, dispatch to handleMessage().', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:onAbort', fn: 'onAbort()', desc: 'Register abort callback → sessionManager.abort(threadKey). Triggered by chat.abort.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendMessage', fn: 'sendMessage()', desc: 'Send chat.message to thread subscribers. Initial "⏳ Thinking..." or additional chunks.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:editMessage', fn: 'editMessage()', desc: 'Send chat.update to thread subscribers. Replaces content with latest buffered text + status.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendDone', fn: 'sendDone()', desc: 'Broadcast chat.done with token stats. Clears stream buffer for thread.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendSessionUpdate', fn: 'sendSessionUpdate()', desc: 'Broadcast session.update to ALL clients for sidebar refresh (new/renamed session).', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendError', fn: 'sendError()', badge: 'catch', desc: 'Broadcast chat.error + clear stream buffer. Called via catch handler on process failure or abort.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:subscriptions', fn: 'subscriptions.add()', desc: 'Map<threadId, Set<WS>>. Add WS client to per-thread subscriber set.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:messageHandler', fn: 'messageHandler()', desc: 'Parse WS chat.send, auto-subscribe sender, construct IncomingMessage, dispatch to onMessage callback.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:onAbort', fn: 'onAbort()', desc: 'Register abort callback. chat.abort triggers abortHandler(threadKey) -> sessionManager.abort().', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendMessage', fn: 'sendMessage()', desc: 'Send chat.message to thread subscribers. Populates streamBuffers for recovery.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:editMessage', fn: 'editMessage()', desc: 'Send chat.update to thread subscribers. Updates streamBuffers with latest content.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendDone', fn: 'sendDone()', desc: 'Broadcast chat.done with token stats. Clears streamBuffers for thread.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendSessionUpdate', fn: 'sendSessionUpdate()', desc: 'Broadcast session.update to ALL clients for sidebar refresh.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:sendError', fn: 'sendError()', badge: 'catch', desc: 'Broadcast chat.error + clear streamBuffers. Called on process failure or abort.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:subscriptions', fn: 'subscribe()', desc: 'Map<threadId, Set<WS>>. Add WS client to per-thread subscriber set.', file: 'cli/src/adapters/web.ts' },
     { id: 'webadapter:streamBuffers', fn: 'streamBuffers.get()', desc: 'Map<threadId, string>. Get current stream content for recovery on subscribe.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendToThread', fn: 'sendToThread()', desc: 'Send to thread subscribers only, fallback to broadcast if no subscribers.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:httpHandler', fn: 'HTTP handler', badge: 'cb', desc: 'Route HTTP requests via Node http.createServer callback: /api/* → handleApi(), other paths → serveStatic(). 1MB body limit.', file: 'cli/src/adapters/web.ts' },
+    { id: 'webadapter:httpHandler', fn: 'HTTP handler', badge: 'cb', desc: 'Route HTTP: /api/* -> handleApi(), other -> serveStatic(). 1MB body limit.', file: 'cli/src/adapters/web.ts' },
+  ],
+  cli: [
+    { id: 'cli:main', fn: 'main()', entry: true, desc: 'Entry: loadConfig -> Store -> SessionManager -> Formatter -> Router -> init adapters -> setupProject -> onMessage -> recoverPending -> signal handlers.', file: 'cli/src/index.ts' },
+    { id: 'cli:handleMessage', fn: 'handleMessage()', badge: 'orch', desc: 'Core orchestrator: pendingAsks check -> mgmt cmd? -> getProject -> createThread -> save -> invoke -> format -> deliver.', file: 'cli/src/index.ts' },
+    { id: 'cli:handleReaction', fn: 'handleReaction()', desc: 'Convert reaction to Claude message: getProject -> getSessionId -> getMessage -> handleMessage().', file: 'cli/src/index.ts' },
+    { id: 'cli:handleSlashCmd', fn: 'handleSlashCommand()', desc: 'Discord slash dispatch: done/reopen, list/add/remove project, reload config.', file: 'cli/src/index.ts' },
+    { id: 'cli:handleMgmtCmd', fn: 'handleManagementCmd()', desc: 'Text /im-* command dispatch: parseManagementCommand -> switch -> config ops -> reply.', file: 'cli/src/index.ts' },
+    { id: 'cli:shutdown', fn: 'gracefulShutdown()', entry: true, desc: 'SIGINT/SIGTERM: markPendingRestart -> abortAll -> adapter.stop() -> store.close() -> exit(0).', file: 'cli/src/index.ts' },
+    { id: 'cli:recover', fn: 'recoverPending()', entry: true, desc: 'On startup: getPendingRestarts -> clearPendingRestarts -> invoke() with --resume. Retry once after 3s.', file: 'cli/src/index.ts' },
   ],
   router: [
-    { id: 'router:getProject', fn: 'getProject()', desc: 'Map {platform}:{channelId} → ProjectConfig. Returns null if channel not registered.', file: 'core/src/router.ts' },
-    { id: 'router:isCmd', fn: 'isManagementCmd()', desc: 'Check if content matches /im-* pattern. Pure boolean check, no side effects.', file: 'core/src/router.ts' },
-    { id: 'router:parseCmd', fn: 'parseManagementCmd()', desc: 'Parse /im-* content into { command, args }. Pure function, no side effects.', file: 'core/src/router.ts' },
-    { id: 'router:setupProject', fn: 'setupProject()', desc: 'Register channel mapping: {platform}:{channelId} → project name. Called at startup.', file: 'core/src/router.ts' },
+    { id: 'router:getProject', fn: 'getProject()', desc: 'Map {platform}:{channelId} -> ProjectConfig. Returns null if unregistered.', file: 'core/src/router.ts' },
+    { id: 'router:parseCmd', fn: 'parseManagementCmd()', entry: true, desc: 'Detect /im-* commands: list-projects, add-project, remove-project, reload-config, done, reopen, init, update.', file: 'core/src/router.ts' },
+    { id: 'router:register', fn: 'registerChannel()', desc: 'Register mapping: {platform}:{channelId} -> project name. Called at startup per adapter+project.', file: 'core/src/router.ts' },
+    { id: 'router:getSessionId', fn: 'getSessionId()', desc: 'Lookup store.getThread() -> session_id. Used by handleReaction.', file: 'core/src/router.ts' },
+    { id: 'router:isManagementCmd', fn: 'isManagementCommand()', desc: 'Regex test for /im-* prefix. Fast check before full parse.', file: 'core/src/router.ts' },
+  ],
+  api: [
+    { id: 'api:handleApi', fn: 'handleApi()', desc: '12+ endpoints: GET/PUT config, CRUD projects, sessions, stats/tokens, stats/overview, sessions/:id/messages, archive, claude/test.', file: 'server/src/api.ts' },
+    { id: 'api:maskConfig', fn: 'maskConfig()', desc: 'Deep-clone config, replace secrets with "***" before sending to client.', file: 'server/src/api.ts' },
   ],
   session: [
-    { id: 'session:invoke', fn: 'invoke()', desc: 'Queue message if thread busy, wait for concurrency slot (max 5), then spawn Claude process. Per-thread FIFO queue.', file: 'core/src/session.ts' },
-    { id: 'session:spawn', fn: 'spawn()', desc: 'Start: claude --print --output-format stream-json --model {model} --resume {sessionId} -p {message}. cwd=projectDir.', file: 'core/src/session.ts' },
-    { id: 'session:onEvent', fn: 'onEvent()', badge: 'cb', desc: 'Stream callback invoked by readline handler for each NDJSON line from stdout. Accumulate buffered text, track tool activities.', file: 'core/src/session.ts' },
-    { id: 'session:abort', fn: 'abort()', desc: 'Send SIGTERM to active Claude child process for given threadKey.', file: 'core/src/session.ts' },
-    { id: 'session:abortAll', fn: 'abortAll()', desc: 'SIGTERM all running Claude processes. Called during graceful shutdown.', file: 'core/src/session.ts' },
+    { id: 'session:invoke', fn: 'invoke()', desc: 'Queue if thread busy (per-thread FIFO), wait for concurrency slot (max N), then spawn Claude. Returns SessionResult.', file: 'core/src/session.ts' },
+    { id: 'session:spawn', fn: 'spawn()', desc: 'child_process.spawn: claude --print --output-format stream-json --model {model} --resume {sessionId} -p {message}.', file: 'core/src/session.ts' },
+    { id: 'session:onEvent', fn: 'onEvent()', badge: 'cb', desc: 'readline callback for each NDJSON from stdout. Parse StreamEvent, accumulate text, capture session_id, extract usage.', file: 'core/src/session.ts' },
+    { id: 'session:abort', fn: 'abort()', desc: 'Send SIGTERM to active Claude child process matching threadKey.', file: 'core/src/session.ts' },
+    { id: 'session:abortAll', fn: 'abortAll()', desc: 'SIGTERM all running Claude processes. Clear active map and queues.', file: 'core/src/session.ts' },
+    { id: 'session:buildArgs', fn: 'buildArgs()', desc: 'Construct CLI args: defaultArgs + --model override + --resume sessionId.', file: 'core/src/session.ts' },
   ],
   claude: [
-    { id: 'claude:StreamInit', fn: 'StreamInit', badge: 'cb', desc: 'type: "system", subtype: "init". Read via readline callback on stdout. Captures session_id for --resume on next message.', file: 'Claude Code stdout' },
-    { id: 'claude:StreamAssistant', fn: 'StreamAssistant', badge: 'cb', desc: 'type: "assistant". Read via readline callback on stdout. Content array: text blocks + tool_use blocks. Emitted multiple times during response.', file: 'Claude Code stdout' },
-    { id: 'claude:StreamResult', fn: 'StreamResult', badge: 'cb', desc: 'type: "result", subtype: "success"|"error". Read via readline callback on stdout. Final text + usage (input_tokens, output_tokens, cache_read, cache_creation).', file: 'Claude Code stdout' },
-    { id: 'claude:AskUser', fn: 'AskUserQuestion', desc: 'Tool interception: detect tool_use name="AskUserQuestion", store questions, send to user, await reply, re-invoke with --resume.', file: 'cli/src/index.ts' },
+    { id: 'claude:StreamInit', fn: 'StreamInit', badge: 'cb', desc: 'type: "system", subtype: "init". Captures session_id for --resume on next message.', file: 'Claude Code stdout' },
+    { id: 'claude:StreamAssistant', fn: 'StreamAssistant', badge: 'cb', desc: 'type: "assistant". Content: text blocks + tool_use blocks. Emitted multiple times.', file: 'Claude Code stdout' },
+    { id: 'claude:StreamResult', fn: 'StreamResult', badge: 'cb', desc: 'type: "result". Final text + usage (input_tokens, output_tokens, cache_read, cache_creation).', file: 'Claude Code stdout' },
+    { id: 'claude:AskUser', fn: 'AskUserQuestion', desc: 'Tool interception: detect tool_use name="AskUserQuestion", format options, await user reply, re-invoke.', file: 'cli/src/index.ts' },
   ],
   formatter: [
-    { id: 'formatter:extractReactions', fn: 'extractReactions()', desc: 'Strip [react:emoji] patterns from end of text. Returns {cleanText, reactions: string[]}.', file: 'core/src/formatter.ts' },
-    { id: 'formatter:formatOutput', fn: 'formatOutput()', desc: '≤maxLen → single msg. ≤maxLen×5 → splitText() with [i/N] prefix. >maxLen×5 → generateSummary() + full-output.md.', file: 'core/src/formatter.ts' },
-    { id: 'formatter:extractImages', fn: 'extractImages()', desc: 'Match image file paths (png/jpg/gif/svg) in response text → Attachment[] for upload.', file: 'core/src/formatter.ts' },
+    { id: 'formatter:extractReactions', fn: 'extractReactions()', desc: 'Strip [react:emoji] patterns from text end. Returns {cleanText, reactions[]}.', file: 'core/src/formatter.ts' },
+    { id: 'formatter:formatOutput', fn: 'formatOutput()', desc: 'Route: <=maxLen single; <=5x splitText [i/N]; >5x generateSummary + full-output.md.', file: 'core/src/formatter.ts' },
+    { id: 'formatter:extractImages', fn: 'extractImages()', desc: 'Regex match image paths in text. Read from disk -> Attachment[] for upload.', file: 'core/src/formatter.ts' },
+    { id: 'formatter:getMaxLength', fn: 'getMaxLength()', desc: 'Return platform-specific max message length from FormatterConfig.', file: 'core/src/formatter.ts' },
   ],
   store: [
-    { id: 'store:upsertThread', fn: 'upsertThread()', desc: 'INSERT ... ON CONFLICT DO UPDATE SET session_id, name. Creates or updates thread record.', file: 'core/src/store.ts' },
-    { id: 'store:saveMessage', fn: 'saveMessage()', desc: 'INSERT OR REPLACE with content_summary, token counts (input, output, cache_read, cache_creation), model.', file: 'core/src/store.ts' },
-    { id: 'store:getThread', fn: 'getThread()', desc: 'SELECT * WHERE thread_id=? AND platform=?. Returns thread record or null.', file: 'core/src/store.ts' },
-    { id: 'store:getSessionTokens', fn: 'getSessionTokens()', desc: 'SUM(tokens) WHERE thread_id=? AND is_bot=1. Cumulative token usage for a session.', file: 'core/src/store.ts' },
-    { id: 'store:listSessions', fn: 'listSessions()', desc: 'List threads with optional project filter. Excludes archived by default.', file: 'core/src/store.ts' },
-    { id: 'store:getDailyTokens', fn: 'getDailyTokens()', desc: 'GROUP BY DATE(created_at), model. Daily token breakdown for stats dashboard.', file: 'core/src/store.ts' },
-    { id: 'store:updateStatus', fn: 'updateThreadStatus()', desc: 'UPDATE SET status=? (active/done/archived). Used by /im-done and /im-reopen.', file: 'core/src/store.ts' },
-    { id: 'store:markPending', fn: 'markPendingRestart()', desc: 'INSERT OR IGNORE into pending_restarts. Marks active threads for recovery on next startup.', file: 'core/src/store.ts' },
-    { id: 'store:getPending', fn: 'getPendingRestarts()', desc: 'JOIN threads on pending_restarts. Returns threads that need session recovery.', file: 'core/src/store.ts' },
+    { id: 'store:upsertThread', fn: 'upsertThread()', desc: 'INSERT ON CONFLICT UPDATE session_id, name. Creates or updates thread record.', file: 'core/src/store.ts' },
+    { id: 'store:saveMessage', fn: 'saveMessage()', desc: 'INSERT OR REPLACE with content_summary, tokens, model. PK: (message_id, platform).', file: 'core/src/store.ts' },
+    { id: 'store:getThread', fn: 'getThread()', desc: 'SELECT WHERE thread_id=? AND platform=?. Used for session_id lookup.', file: 'core/src/store.ts' },
+    { id: 'store:getSessionTokens', fn: 'getSessionTokens()', desc: 'SUM tokens WHERE thread_id=? AND is_bot=1. For chat.done token stats.', file: 'core/src/store.ts' },
+    { id: 'store:listSessions', fn: 'listSessions()', desc: 'List threads with project/platform filter. Excludes archived by default.', file: 'core/src/store.ts' },
+    { id: 'store:getDailyTokens', fn: 'getDailyTokens()', desc: 'GROUP BY date, model. Daily token breakdown for stats dashboard.', file: 'core/src/store.ts' },
+    { id: 'store:getOverviewTokens', fn: 'getOverviewTokens()', desc: 'Per-session token totals. Supports window filter (24h/7d/all).', file: 'core/src/store.ts' },
+    { id: 'store:updateStatus', fn: 'updateThreadStatus()', desc: 'UPDATE status=? (active/done/archived). Used by /im-done, /im-reopen.', file: 'core/src/store.ts' },
+    { id: 'store:archiveThread', fn: 'archiveThread()', desc: 'UPDATE status=archived. Used by PATCH /api/sessions/:id/archive.', file: 'core/src/store.ts' },
+    { id: 'store:markPending', fn: 'markPendingRestart()', desc: 'INSERT OR IGNORE into pending_restarts for recovery after restart.', file: 'core/src/store.ts' },
+    { id: 'store:getPending', fn: 'getPendingRestarts()', desc: 'JOIN threads on pending_restarts. Returns threads needing recovery.', file: 'core/src/store.ts' },
+    { id: 'store:getMessage', fn: 'getMessage()', desc: 'SELECT WHERE message_id=? AND platform=?. For handleReaction summary.', file: 'core/src/store.ts' },
     { id: 'store:close', fn: 'close()', desc: 'Close SQLite connection. Called during graceful shutdown.', file: 'core/src/store.ts' },
   ],
   config: [
-    { id: 'config:load', fn: 'loadConfig()', desc: 'Search: CC2IM_CONFIG env → --config flag → ~/.config/cc2im/config.yaml → ./config.yaml. Apply env var overrides.', file: 'core/src/config.ts' },
-    { id: 'config:save', fn: 'saveConfig()', desc: 'Write config to YAML. Secrets from env vars saved as empty string to avoid leaking.', file: 'core/src/config.ts' },
-  ],
-  api: [
-    { id: 'api:handleApi', fn: 'handleApi()', desc: '12 endpoints: GET/PUT /api/config, CRUD /api/projects, GET /api/sessions, GET /api/stats/tokens, POST /api/claude/test. Secret masking on GET.', file: 'server/src/api.ts' },
-  ],
-  cli: [
-    { id: 'cli:main', fn: 'main()', entry: true, desc: 'Entry point: loadConfig → Store → SessionManager → Formatter → Router → init adapters → setupProject → onMessage → recoverPending → signal handlers.', file: 'cli/src/index.ts' },
-    { id: 'cli:handleMessage', fn: 'handleMessage()', badge: 'orch', desc: 'Core orchestrator: route → persist → invoke → format → deliver. Coordinates all steps of message processing sequentially.', file: 'cli/src/index.ts' },
-    { id: 'cli:shutdown', fn: 'gracefulShutdown()', entry: true, desc: 'SIGINT/SIGTERM: markPendingRestart for active threads → abortAll → adapter.stop() → store.close() → exit(0).', file: 'cli/src/index.ts' },
-    { id: 'cli:recover', fn: 'recoverPending()', entry: true, desc: 'On startup: load pending → clear table → invoke() with --resume for each. Retry once after 3s on failure.', file: 'cli/src/index.ts' },
-    { id: 'cli:handleMgmtCmd', fn: 'handleManagementCmd()', entry: true, desc: 'Check isManagementCommand → parseManagementCommand → dispatch to executeCommand. Early return in handleMessage.', file: 'cli/src/index.ts' },
-    { id: 'cli:executeCmd', fn: 'executeCommand()', desc: 'Dispatch management commands: add/remove project, reload config, mark done/reopen, init owner.', file: 'cli/src/index.ts' },
-  ],
-  types: [
-    { id: 'types:PlatformAdapter', fn: 'PlatformAdapter', entry: true, desc: 'Interface: start/stop, setupProject, createThread, sendMessage, editMessage, uploadFile, addReaction, onMessage, onReaction.', file: 'core/src/types.ts' },
-    { id: 'types:IncomingMessage', fn: 'IncomingMessage', desc: 'Interface: platform, channelId, threadId, messageId, userId, userName, content, attachments.', file: 'core/src/types.ts' },
-    { id: 'types:Reaction', fn: 'Reaction', desc: 'Interface: platform, channelId, threadId, messageId, emoji, userId. Normalized reaction event.', file: 'core/src/types.ts' },
-    { id: 'types:StreamCallback', fn: 'StreamCallback', desc: 'Type: (event: StreamEvent) => void. Callback abstraction for stream event processing.', file: 'core/src/session.ts' },
-    { id: 'types:StreamEvent', fn: 'StreamEvent', desc: 'Union type: StreamInitEvent | StreamAssistantEvent | StreamResultEvent. Claude Code NDJSON protocol.', file: 'core/src/types.ts' },
-    { id: 'types:AppConfig', fn: 'AppConfig', desc: 'Interface: lark, discord, projects[], claude, formatter. Top-level configuration shape.', file: 'core/src/types.ts' },
-    { id: 'types:ProjectConfig', fn: 'ProjectConfig', desc: 'Interface: name, directory, model?, platforms. Per-project settings.', file: 'core/src/types.ts' },
+    { id: 'config:load', fn: 'loadConfig()', desc: 'Read YAML, apply env overrides (DISCORD_TOKEN, LARK_APP_ID, LARK_APP_SECRET).', file: 'core/src/config.ts' },
+    { id: 'config:save', fn: 'saveConfig()', desc: 'Write YAML. Secrets from env saved as empty string to avoid leaking.', file: 'core/src/config.ts' },
+    { id: 'config:addProject', fn: 'addProject()', desc: 'Add or replace project in config.projects by name.', file: 'core/src/config.ts' },
+    { id: 'config:removeProject', fn: 'removeProject()', desc: 'Filter out project by name from config.projects.', file: 'core/src/config.ts' },
   ],
 };
 
@@ -646,162 +635,181 @@ const CHAINS = {
   'discord:onMessage': {
     name: 'Discord Message',
     edges: [
-      // entry → handleMessage
-      { from: 'discord:onMessage', to: 'cli:handleMessage', type: 'dependency' },
-      // handleMessage calls each step directly
-      { from: 'cli:handleMessage', to: 'router:getProject', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'session:invoke', type: 'dependency' },
-      // invoke internally calls spawn
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      // spawn starts claude process, readline reads stdout events via callback
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'dependency' },
-      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'dependency' },
-      // readline callback calls onEvent for each event
-
-      // after invoke resolves, handleMessage calls formatter + adapter
-      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
+      { from: 'discord:onMessage', to: 'cli:handleMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:isManagementCmd', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:getProject', type: 'request' },
+      { from: 'cli:handleMessage', to: 'discord:createThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'discord:sendMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:buildArgs', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:editMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:uploadFile', type: 'response' },
+      { from: 'cli:handleMessage', to: 'discord:addReaction', type: 'response' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'response' },
     ]
   },
   'lark:onMessage': {
     name: 'Lark Message',
     edges: [
-      { from: 'lark:onMessage', to: 'cli:handleMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'router:getProject', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'session:invoke', type: 'dependency' },
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'dependency' },
-      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'dependency' },
-
-      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
+      { from: 'lark:onMessage', to: 'cli:handleMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:isManagementCmd', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:getProject', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'lark:sendMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:buildArgs', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'response' },
+      { from: 'cli:handleMessage', to: 'lark:editMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'lark:uploadFile', type: 'response' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'response' },
     ]
   },
   'webui:chat.send': {
     name: 'Web Message',
     edges: [
-      { from: 'webui:chat.send', to: 'webadapter:messageHandler', type: 'dependency' },
-      { from: 'webadapter:messageHandler', to: 'cli:handleMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'router:getProject', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'session:invoke', type: 'dependency' },
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'dependency' },
-      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'dependency' },
-
-      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      // 外层 wrapper 调用（handleMessage 之后）
-      { from: 'webadapter:messageHandler', to: 'webadapter:sendDone', type: 'dependency' },
+      { from: 'webui:chat.send', to: 'webadapter:messageHandler', type: 'request' },
+      { from: 'webadapter:messageHandler', to: 'webadapter:subscriptions', type: 'request' },
+      { from: 'webadapter:messageHandler', to: 'cli:handleMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:getThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:handleMessage', to: 'webadapter:sendSessionUpdate', type: 'request' },
+      { from: 'cli:handleMessage', to: 'router:getProject', type: 'request' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'webadapter:sendMessage', type: 'request' },
+      { from: 'cli:handleMessage', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:handleMessage', to: 'webadapter:editMessage', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'response' },
+      { from: 'webadapter:messageHandler', to: 'webadapter:sendDone', type: 'response' },
+      { from: 'webadapter:messageHandler', to: 'webadapter:sendSessionUpdate', type: 'response' },
     ]
   },
   'webui:chat.subscribe': {
     name: 'Web Subscribe',
     edges: [
-      { from: 'webui:chat.subscribe', to: 'webadapter:subscriptions', type: 'dependency' },
-      { from: 'webadapter:subscriptions', to: 'webadapter:streamBuffers', type: 'dependency' },
-      { from: 'webadapter:streamBuffers', to: 'webadapter:sendToThread', type: 'dependency' },
+      { from: 'webui:chat.subscribe', to: 'webadapter:subscriptions', type: 'request' },
+      { from: 'webadapter:subscriptions', to: 'webadapter:streamBuffers', type: 'request' },
+      { from: 'webadapter:streamBuffers', to: 'webui:chat.subscribe', type: 'response' },
     ]
   },
   'webui:chat.abort': {
     name: 'Web Abort',
     edges: [
-      { from: 'webui:chat.abort', to: 'webadapter:onAbort', type: 'dependency' },
-      { from: 'webadapter:onAbort', to: 'session:abort', type: 'dependency' },
-
+      { from: 'webui:chat.abort', to: 'webadapter:onAbort', type: 'request' },
+      { from: 'webadapter:onAbort', to: 'session:abort', type: 'request' },
+      { from: 'session:abort', to: 'webadapter:sendError', type: 'response' },
     ]
   },
   'webui:fetch': {
     name: 'REST API',
     edges: [
-      { from: 'webui:fetch', to: 'webadapter:httpHandler', type: 'dependency' },
-      { from: 'webadapter:httpHandler', to: 'api:handleApi', type: 'dependency' },
-      { from: 'api:handleApi', to: 'store:listSessions', type: 'dependency' },
-      { from: 'api:handleApi', to: 'store:getDailyTokens', type: 'dependency' },
-      { from: 'api:handleApi', to: 'config:load', type: 'dependency' },
-      { from: 'api:handleApi', to: 'config:save', type: 'dependency' },
+      { from: 'webui:fetch', to: 'webadapter:httpHandler', type: 'request' },
+      { from: 'webadapter:httpHandler', to: 'api:handleApi', type: 'request' },
+      { from: 'api:handleApi', to: 'config:load', type: 'request' },
+      { from: 'api:handleApi', to: 'config:save', type: 'request' },
+      { from: 'api:handleApi', to: 'api:maskConfig', type: 'request' },
+      { from: 'api:handleApi', to: 'config:addProject', type: 'request' },
+      { from: 'api:handleApi', to: 'config:removeProject', type: 'request' },
+      { from: 'api:handleApi', to: 'store:listSessions', type: 'request' },
+      { from: 'api:handleApi', to: 'store:getSessionTokens', type: 'request' },
+      { from: 'api:handleApi', to: 'store:getDailyTokens', type: 'request' },
+      { from: 'api:handleApi', to: 'store:getOverviewTokens', type: 'request' },
+      { from: 'api:handleApi', to: 'store:archiveThread', type: 'request' },
     ]
   },
   'cli:main': {
     name: 'CLI Startup',
     edges: [
-      { from: 'cli:main', to: 'config:load', type: 'dependency' },
-      { from: 'cli:main', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:main', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:main', to: 'router:setupProject', type: 'dependency' },
-      { from: 'cli:main', to: 'cli:recover', type: 'dependency' },
+      { from: 'cli:main', to: 'config:load', type: 'request' },
+      { from: 'cli:main', to: 'store:upsertThread', type: 'request' },
+      { from: 'cli:main', to: 'router:register', type: 'request' },
+      { from: 'cli:main', to: 'discord:setupProject', type: 'request' },
+      { from: 'cli:main', to: 'lark:setupProject', type: 'request' },
+      { from: 'cli:main', to: 'discord:onMessage', type: 'request' },
+      { from: 'cli:main', to: 'lark:onMessage', type: 'request' },
+      { from: 'cli:main', to: 'cli:recover', type: 'request' },
+      { from: 'cli:recover', to: 'store:getPending', type: 'request' },
+      { from: 'cli:recover', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
     ]
   },
   'cli:shutdown': {
     name: 'Graceful Shutdown',
     edges: [
-      { from: 'cli:shutdown', to: 'store:markPending', type: 'dependency' },
-      { from: 'cli:shutdown', to: 'session:abortAll', type: 'dependency' },
-      { from: 'cli:shutdown', to: 'store:close', type: 'dependency' },
+      { from: 'cli:shutdown', to: 'store:markPending', type: 'request' },
+      { from: 'cli:shutdown', to: 'session:abortAll', type: 'request' },
+      { from: 'cli:shutdown', to: 'store:close', type: 'request' },
+    ]
+  },
+  'router:parseCmd': {
+    name: 'Management Command (/im-*)',
+    edges: [
+      { from: 'router:parseCmd', to: 'cli:handleMgmtCmd', type: 'request' },
+      { from: 'cli:handleMgmtCmd', to: 'config:addProject', type: 'request' },
+      { from: 'cli:handleMgmtCmd', to: 'config:removeProject', type: 'request' },
+      { from: 'cli:handleMgmtCmd', to: 'config:save', type: 'request' },
+      { from: 'cli:handleMgmtCmd', to: 'config:load', type: 'request' },
+      { from: 'cli:handleMgmtCmd', to: 'store:updateStatus', type: 'request' },
+      { from: 'cli:handleMgmtCmd', to: 'discord:sendMessage', type: 'response' },
+      { from: 'cli:handleMgmtCmd', to: 'lark:sendMessage', type: 'response' },
+    ]
+  },
+  'discord:onSlashCommand': {
+    name: 'Discord Slash Command',
+    edges: [
+      { from: 'discord:onSlashCommand', to: 'cli:handleSlashCmd', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'store:getThread', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'store:updateStatus', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'config:addProject', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'config:removeProject', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'config:save', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'discord:setupProject', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'router:register', type: 'request' },
+      { from: 'cli:handleSlashCmd', to: 'config:load', type: 'request' },
     ]
   },
   'cli:recover': {
     name: 'Pending Recovery',
     edges: [
-      { from: 'cli:recover', to: 'store:getPending', type: 'dependency' },
-      { from: 'cli:recover', to: 'session:invoke', type: 'dependency' },
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-
-      { from: 'cli:recover', to: 'types:PlatformAdapter', type: 'dependency' },
-    ]
-  },
-  'cli:handleMgmtCmd': {
-    name: 'Management Command (/im-*)',
-    edges: [
-      { from: 'cli:handleMessage', to: 'cli:handleMgmtCmd', type: 'dependency' },
-      { from: 'cli:handleMgmtCmd', to: 'router:isCmd', type: 'dependency' },
-      { from: 'cli:handleMgmtCmd', to: 'router:parseCmd', type: 'dependency' },
-      { from: 'cli:handleMgmtCmd', to: 'cli:executeCmd', type: 'dependency' },
-      { from: 'cli:executeCmd', to: 'config:save', type: 'dependency' },
-      { from: 'cli:executeCmd', to: 'store:updateStatus', type: 'dependency' },
-      { from: 'cli:executeCmd', to: 'types:PlatformAdapter', type: 'dependency' },
-    ]
-  },
-  'types:PlatformAdapter': {
-    name: 'Adapter → Interface',
-    edges: [
-      // PlatformAdapter: 适配器实现接口
-      { from: 'discord:onMessage', to: 'types:PlatformAdapter', type: 'implements' },
-      { from: 'lark:onMessage', to: 'types:PlatformAdapter', type: 'implements' },
-      { from: 'webadapter:messageHandler', to: 'types:PlatformAdapter', type: 'implements' },
-      // IncomingMessage: 适配器生产 DTO，CLI 消费
-      { from: 'discord:onMessage', to: 'types:IncomingMessage', type: 'implements' },
-      { from: 'lark:onMessage', to: 'types:IncomingMessage', type: 'implements' },
-      { from: 'webadapter:messageHandler', to: 'types:IncomingMessage', type: 'implements' },
-      { from: 'cli:handleMessage', to: 'types:IncomingMessage', type: 'dependency' },
-      // StreamCallback: CLI 提供回调，SessionManager 消费
-      { from: 'cli:handleMessage', to: 'types:StreamCallback', type: 'implements' },
-      { from: 'session:invoke', to: 'types:StreamCallback', type: 'dependency' },
-      // StreamEvent: Claude 产生，SessionManager 通过回调传递
-      { from: 'session:onEvent', to: 'types:StreamEvent', type: 'dependency' },
-      // AppConfig: 各模块依赖配置接口
-      { from: 'session:invoke', to: 'types:AppConfig', type: 'dependency' },
-      { from: 'formatter:formatOutput', to: 'types:AppConfig', type: 'dependency' },
-      { from: 'router:getProject', to: 'types:AppConfig', type: 'dependency' },
+      { from: 'cli:recover', to: 'store:getPending', type: 'request' },
+      { from: 'cli:recover', to: 'session:invoke', type: 'request' },
+      { from: 'session:invoke', to: 'session:buildArgs', type: 'request' },
+      { from: 'session:invoke', to: 'session:spawn', type: 'request' },
+      { from: 'session:spawn', to: 'claude:StreamInit', type: 'request' },
+      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'request' },
+      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'request' },
+      { from: 'claude:StreamResult', to: 'session:onEvent', type: 'response' },
+      { from: 'cli:recover', to: 'formatter:extractReactions', type: 'response' },
+      { from: 'cli:recover', to: 'formatter:formatOutput', type: 'response' },
+      { from: 'cli:recover', to: 'discord:sendMessage', type: 'response' },
+      { from: 'cli:recover', to: 'lark:sendMessage', type: 'response' },
+      { from: 'cli:recover', to: 'store:upsertThread', type: 'response' },
+      { from: 'cli:recover', to: 'store:updateStatus', type: 'response' },
     ]
   },
 };
@@ -815,11 +823,10 @@ let animating = false;
 let animSpeed = 1;
 let animFrame = null;
 let glowDots = [];
-const pillEls = {};     // fnId -> DOM element
-const pathEls = {};     // "from|to" -> SVG path element
+const pillEls = {};
+const pathEls = {};
 let svgEl, lanesEl, containerEl;
 
-// Build a lookup: moduleId -> laneIndex for connection routing
 const moduleLaneIndex = {};
 LANES.forEach((lane, i) => {
   lane.modules.forEach(modId => { moduleLaneIndex[modId] = i; });
@@ -841,7 +848,6 @@ function buildHeader() {
   });
 }
 
-// Popover state
 let openPopover = null;
 
 function closePopover() {
@@ -862,7 +868,6 @@ function showPopover(fnData, modData, anchorEl) {
     <div class="pop-desc">${fnData.desc || ''}</div>
     ${fnData.file ? `<div class="pop-file">${fnData.file}</div>` : ''}`;
 
-  // Position relative to anchor pill
   const rect = anchorEl.getBoundingClientRect();
   const mainRect = document.getElementById('main').getBoundingClientRect();
   pop.style.left = (rect.right - mainRect.left + 8) + 'px';
@@ -871,7 +876,6 @@ function showPopover(fnData, modData, anchorEl) {
   document.getElementById('swim-container').appendChild(pop);
   openPopover = pop;
 
-  // Reposition if off-screen
   requestAnimationFrame(() => {
     const popRect = pop.getBoundingClientRect();
     if (popRect.right > window.innerWidth - 10) {
@@ -891,13 +895,13 @@ function buildModuleGroup(modId) {
   group.dataset.module = modId;
   const label = document.createElement('div');
   label.className = 'module-label';
-  label.innerHTML = `<span class="module-label-dot" style="background:${mod.color}"></span>${mod.name}${mod.path ? `<span class="module-path">${mod.path}</span>` : ''}`;
+  label.innerHTML = `<span class="module-label-dot" style="background:${mod.color}"></span>${mod.name}`;
   group.appendChild(label);
   fns.forEach(f => {
     const pill = document.createElement('div');
     pill.className = 'fn-pill';
     pill.dataset.fn = f.id;
-    pill.style.paddingRight = '20px'; // room for info btn
+    pill.style.paddingRight = '20px';
 
     if (f.entry) {
       pill.dataset.entry = 'true';
@@ -910,7 +914,6 @@ function buildModuleGroup(modId) {
       pill.textContent = f.fn;
     }
 
-    // Badge for call type
     if (f.badge) {
       const badgeEl = document.createElement('span');
       badgeEl.className = `fn-badge badge-${f.badge}`;
@@ -918,7 +921,6 @@ function buildModuleGroup(modId) {
       pill.appendChild(badgeEl);
     }
 
-    // Info button
     const btn = document.createElement('span');
     btn.className = 'fn-info-btn';
     btn.textContent = 'i';
@@ -946,7 +948,6 @@ function buildLanes() {
     const items = lane.layout || lane.modules.map(m => m);
     items.forEach(item => {
       if (Array.isArray(item)) {
-        // Horizontal pair
         const pair = document.createElement('div');
         pair.className = 'module-pair';
         item.forEach(modId => pair.appendChild(buildModuleGroup(modId)));
@@ -962,7 +963,6 @@ function buildLanes() {
 
 function buildEntryBar() {
   const bar = document.getElementById('entry-bar');
-  // Collect all entry functions
   const entries = [];
   for (const [modId, fns] of Object.entries(MODULE_FUNCTIONS)) {
     fns.filter(f => f.entry).forEach(f => {
@@ -1007,7 +1007,6 @@ function pillCenter(fnId) {
   };
 }
 
-// Store user-adjusted control point offsets: key -> { cp1: {dx,dy}, cp2: {dx,dy} }
 const pathOffsets = {};
 
 function getDefaultCP(fromId, toId) {
@@ -1048,12 +1047,10 @@ function buildPath(fromId, toId) {
 
 function buildAllPaths() {
   svgEl = document.getElementById('svg-overlay');
-  // Clear old paths (keep defs)
   const defs = svgEl.querySelector('defs');
   svgEl.innerHTML = '';
   svgEl.appendChild(defs);
 
-  // Mark pills that are sources of same-module vertical connections for extra spacing
   document.querySelectorAll('.fn-pill.has-vertical-conn').forEach(el => el.classList.remove('has-vertical-conn'));
   const vertConnSources = new Set();
   for (const chain of Object.values(CHAINS)) {
@@ -1067,7 +1064,6 @@ function buildAllPaths() {
     if (pillEls[fnId]) pillEls[fnId].classList.add('has-vertical-conn');
   });
 
-  // Size SVG to container (re-measure after spacing changes)
   requestAnimationFrame(() => {
     const cr2 = containerEl.getBoundingClientRect();
     svgEl.setAttribute('width', containerEl.scrollWidth);
@@ -1081,7 +1077,6 @@ function buildAllPaths() {
   svgEl.style.width = containerEl.scrollWidth + 'px';
   svgEl.style.height = containerEl.scrollHeight + 'px';
 
-  // Deduplicate edges across all chains
   const edgeSet = new Map();
   for (const chain of Object.values(CHAINS)) {
     chain.edges.forEach(e => {
@@ -1095,28 +1090,24 @@ function buildAllPaths() {
     const d = buildPath(fromId, toId);
     if (!d) continue;
 
-    // Invisible hit area for dragging
     const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     hit.setAttribute('d', d);
     hit.classList.add('conn-hit');
     hit.dataset.key = key;
     svgEl.appendChild(hit);
 
-    // Visible path
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', d);
     path.classList.add('conn-path', info.type);
     path.dataset.from = fromId;
     path.dataset.to = toId;
-    const markerMap = { dependency: 'url(#arrow-dep)', implements: 'url(#arrow-impl)' };
-    path.setAttribute('marker-end', markerMap[info.type] || 'url(#arrow-dep)');
+    path.setAttribute('marker-end', info.type === 'request' ? 'url(#arrow-req)' : 'url(#arrow-res)');
     svgEl.appendChild(path);
 
     pathEls[key] = path;
     hitEls[key] = hit;
   }
 
-  // Attach drag handlers
   initPathDrag();
 }
 
@@ -1141,7 +1132,6 @@ function initPathDrag() {
     const mx = e.clientX - cr.left + containerEl.scrollLeft;
     const my = e.clientY - cr.top + containerEl.scrollTop;
 
-    // Determine which control point is closer to click
     const off = pathOffsets[key] || { cp1: {dx:0,dy:0}, cp2: {dx:0,dy:0} };
     const c1x = cp.cp1x + off.cp1.dx, c1y = cp.cp1y + off.cp1.dy;
     const c2x = cp.cp2x + off.cp2.dx, c2y = cp.cp2y + off.cp2.dy;
@@ -1169,7 +1159,6 @@ function initPathDrag() {
       dy: dragState.origOff.dy + ddy,
     };
 
-    // Rebuild just this path
     const d = buildPath(dragState.fromId, dragState.toId);
     if (pathEls[dragState.key]) pathEls[dragState.key].setAttribute('d', d);
     if (hitEls[dragState.key]) hitEls[dragState.key].setAttribute('d', d);
@@ -1203,20 +1192,16 @@ function selectChain(chainId) {
   stopAnimation();
   activeChain = chainId;
 
-  // Show chain name
   const nameEl = document.getElementById('chain-name');
   nameEl.textContent = chain.name;
   nameEl.style.display = 'inline';
 
-  // Collect chain function IDs
   const chainFns = new Set();
   chain.edges.forEach(e => { chainFns.add(e.from); chainFns.add(e.to); });
 
-  // Collect chain edge keys
   const chainEdgeKeys = new Set();
   chain.edges.forEach(e => chainEdgeKeys.add(`${e.from}|${e.to}`));
 
-  // Dim/highlight pills
   for (const [fnId, el] of Object.entries(pillEls)) {
     el.classList.remove('highlighted', 'dimmed', 'pulse');
     if (chainFns.has(fnId)) {
@@ -1226,7 +1211,6 @@ function selectChain(chainId) {
     }
   }
 
-  // Dim/highlight lanes — check each lane's modules
   document.querySelectorAll('.lane[data-lane]').forEach(laneEl => {
     const laneId = laneEl.dataset.lane;
     const lane = LANES.find(l => l.id === laneId);
@@ -1237,7 +1221,6 @@ function selectChain(chainId) {
     laneEl.classList.toggle('dimmed', !hasActive);
   });
 
-  // Dim/highlight paths
   for (const [key, path] of Object.entries(pathEls)) {
     path.classList.remove('active', 'dimmed');
     if (chainEdgeKeys.has(key)) {
@@ -1247,12 +1230,10 @@ function selectChain(chainId) {
     }
   }
 
-  // Entry chips
   document.querySelectorAll('.entry-chip').forEach(c => {
     c.classList.toggle('active', c.dataset.chain === chainId);
   });
 
-  // Start animation
   animateChain(chainId);
 }
 
@@ -1273,8 +1254,6 @@ function resetChain() {
   document.querySelectorAll('.entry-chip').forEach(c => c.classList.remove('active'));
 }
 
-// ── Glow dot helpers ──
-
 function createGlowDot(type, parentSvg) {
   const TRAIL_COUNT = 4;
   const dots = [];
@@ -1283,12 +1262,12 @@ function createGlowDot(type, parentSvg) {
     const isHead = i === 0;
     c.setAttribute('r', isHead ? 3.5 : Math.max(1.5, 3.5 - i * 0.6));
     c.setAttribute('cx', -20); c.setAttribute('cy', -20);
-    c.classList.add(type === 'implements' ? 'glow-implements' : 'glow-dependency');
+    c.classList.add(type === 'request' ? 'glow-request' : 'glow-response');
     c.style.opacity = isHead ? 1 : Math.max(0.15, 1 - i * 0.22);
     parentSvg.appendChild(c);
     dots.push(c);
   }
-  return dots; // [head, trail1, trail2, ...]
+  return dots;
 }
 
 function removeDots(dots) {
@@ -1302,47 +1281,73 @@ function positionDots(dots, positions) {
   });
 }
 
-// ── Animation ──
-
 function animateChain(chainId) {
   const chain = CHAINS[chainId];
   if (!chain) return;
 
-  const allEdges = chain.edges;
-  const allPaths = allEdges.map(e => pathEls[`${e.from}|${e.to}`]).filter(Boolean);
+  const requestEdges = chain.edges.filter(e => e.type === 'request');
+  const responseEdges = chain.edges.filter(e => e.type === 'response');
 
-  if (allPaths.length === 0) return;
+  const reqPaths = requestEdges.map(e => pathEls[`${e.from}|${e.to}`]).filter(Boolean);
+  const resPaths = responseEdges.map(e => pathEls[`${e.from}|${e.to}`]).filter(Boolean);
 
-  const dots = createGlowDot('dependency', svgEl);
-  glowDots = [...dots];
+  if (reqPaths.length === 0 && resPaths.length === 0) return;
 
-  let idx = 0;
-  let progress = 0;
+  const reqDots = reqPaths.length > 0 ? createGlowDot('request', svgEl) : [];
+  const resDots = resPaths.length > 0 ? createGlowDot('response', svgEl) : [];
+  glowDots = [...reqDots, ...resDots];
+
+  let reqIdx = 0, resIdx = 0;
+  let reqProgress = 0, resProgress = 0;
   const TRAIL_SPACING = 8;
-  const history = [];
+
+  const reqHistory = [];
+  const resHistory = [];
 
   animating = true;
 
   function frame() {
     if (!animating) return;
 
-    const path = allPaths[idx];
-    const len = path.getTotalLength();
-    progress += 2.5 * animSpeed;
-    if (progress >= len) {
-      progress = 0;
-      const edge = allEdges.filter(e => pathEls[`${e.from}|${e.to}`])[idx];
-      if (edge) {
-        const el = pillEls[edge.to];
-        if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+    if (reqPaths.length > 0) {
+      const path = reqPaths[reqIdx];
+      const len = path.getTotalLength();
+      reqProgress += 2.5 * animSpeed;
+      if (reqProgress >= len) {
+        reqProgress = 0;
+        const edge = requestEdges.filter(e => pathEls[`${e.from}|${e.to}`])[reqIdx];
+        if (edge) {
+          const el = pillEls[edge.to];
+          if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+        }
+        reqIdx = (reqIdx + 1) % reqPaths.length;
       }
-      idx = (idx + 1) % allPaths.length;
+      const pt = path.getPointAtLength(reqProgress);
+      reqHistory.unshift(pt);
+      if (reqHistory.length > reqDots.length * TRAIL_SPACING) reqHistory.length = reqDots.length * TRAIL_SPACING;
+      const positions = reqDots.map((_, i) => reqHistory[Math.min(i * TRAIL_SPACING, reqHistory.length - 1)]);
+      positionDots(reqDots, positions);
     }
-    const pt = path.getPointAtLength(progress);
-    history.unshift(pt);
-    if (history.length > dots.length * TRAIL_SPACING) history.length = dots.length * TRAIL_SPACING;
-    const positions = dots.map((_, i) => history[Math.min(i * TRAIL_SPACING, history.length - 1)]);
-    positionDots(dots, positions);
+
+    if (resPaths.length > 0) {
+      const path = resPaths[resIdx];
+      const len = path.getTotalLength();
+      resProgress += 2.5 * animSpeed;
+      if (resProgress >= len) {
+        resProgress = 0;
+        const edge = responseEdges.filter(e => pathEls[`${e.from}|${e.to}`])[resIdx];
+        if (edge) {
+          const el = pillEls[edge.to];
+          if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+        }
+        resIdx = (resIdx + 1) % resPaths.length;
+      }
+      const pt = path.getPointAtLength(resProgress);
+      resHistory.unshift(pt);
+      if (resHistory.length > resDots.length * TRAIL_SPACING) resHistory.length = resDots.length * TRAIL_SPACING;
+      const positions = resDots.map((_, i) => resHistory[Math.min(i * TRAIL_SPACING, resHistory.length - 1)]);
+      positionDots(resDots, positions);
+    }
 
     animFrame = requestAnimationFrame(frame);
   }
@@ -1386,7 +1391,6 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Click outside popover to close
 document.addEventListener('mousedown', e => {
   if (openPopover && !openPopover.contains(e.target) && !e.target.closest('.fn-info-btn')) {
     closePopover();
@@ -1403,7 +1407,6 @@ function handleResize() {
   resizeTimer = setTimeout(() => {
     const wasChain = activeChain;
     stopAnimation();
-    // Clear old pathEls
     for (const k of Object.keys(pathEls)) delete pathEls[k];
     buildAllPaths();
     if (wasChain) selectChain(wasChain);
@@ -1420,7 +1423,6 @@ function init() {
   buildLanes();
   buildEntryBar();
 
-  // Wait for layout to settle, then draw paths
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       buildAllPaths();
@@ -1429,7 +1431,6 @@ function init() {
 
   window.addEventListener('resize', handleResize);
 
-  // Rebuild paths on scroll (for sticky header offset changes)
   let scrollTimer;
   document.getElementById('main').addEventListener('scroll', () => {
     clearTimeout(scrollTimer);

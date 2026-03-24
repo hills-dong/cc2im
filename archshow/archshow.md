@@ -1,9 +1,179 @@
+---
+description: Generate an interactive architecture diagram (single-file HTML) from a codebase. Analyzes modules, functions, dependencies, and interface abstractions to produce a swim-lane visualization with animated dependency chains.
+---
+
+# archshow — Interactive Architecture Diagram Generator
+
+You are an architecture visualization specialist. Your job is to analyze a codebase and produce a **single self-contained HTML file** that renders an interactive module-relationship diagram.
+
+## Process
+
+### Phase 1: Codebase Analysis
+
+Thoroughly explore the codebase to extract:
+
+1. **Modules** — Identify logical modules (packages, classes, major files). For each:
+   - `id`: short kebab-case identifier
+   - `name`: display name
+   - `color`: assign from the palette below based on role
+   - `path`: source file path relative to project root
+
+2. **Swim Lanes** — Group modules into 3–6 lanes. For each:
+   - `id`, `name`, `color`, `modules[]`, `flex` (relative width)
+   - Optional `layout[]` for horizontal pairing of related modules within a lane (use nested arrays like `['modA', ['modB', 'modC']]`)
+
+3. **Module Functions** — For each module, list its key public functions/methods. For each:
+   - `id`: `"module:functionName"` format
+   - `fn`: display name (e.g., `"handleMessage()"`)
+   - `entry`: true if this is an entry point (event handler, main, CLI command)
+   - `badge`: optional — `"orch"` (orchestrator), `"cb"` (callback), `"catch"` (error handler), `"timer"` (scheduled)
+   - `desc`: one-line description of what it does
+   - `file`: source file path
+
+4. **Dependency Chains** — Trace key execution flows through the system. For each chain:
+   - Give it a human-readable `name`
+   - List `edges[]` as `{ from, to, type }` where:
+     - `type: 'dependency'` — A calls/depends on B
+     - `type: 'implements'` — A implements/registers with interface B
+   - Each chain should start from an `entry: true` function
+   - Chains should cover: main flows, startup, shutdown, error paths, interface registrations
+
+5. **Interface Abstractions** — Identify dependency inversion patterns and model them explicitly:
+
+   **What to look for:**
+   - Interfaces/abstract types that concrete modules implement (e.g., `PlatformAdapter`)
+   - Callback type abstractions passed between modules (e.g., `StreamCallback`)
+   - DTOs/value objects used as contracts between layers (e.g., `IncomingMessage`, `StreamEvent`)
+   - Config types consumed by multiple modules (e.g., `AppConfig`)
+
+   **How to model them:**
+   - Create a dedicated "Types" or "Interfaces" module containing all shared abstractions as functions
+   - Mark the Types module's main interface function as `entry: true` so it gets a dedicated chain
+   - **Callers depend on the interface, not the implementation.** When module A calls module B through an interface, draw `A → Interface` (dependency), NOT `A → B` directly. This reflects how the code actually works — A holds a reference to the interface type, not to B's concrete class.
+   - **Implementors register with the interface.** Draw `B → Interface` (implements). This shows which concrete modules fulfill the contract.
+   - Create a dedicated "Interface Registration" chain showing all `implements` edges together. This chain answers: "who implements what?"
+
+   **Example pattern:**
+   ```
+   // In execution chains (dependency edges):
+   orchestrator:handleMessage → types:PlatformAdapter    // calls through interface
+
+   // In the registration chain (implements edges):
+   discord:onMessage     → types:PlatformAdapter         // implements the interface
+   lark:onMessage        → types:PlatformAdapter         // implements the interface
+   webAdapter:onMessage  → types:PlatformAdapter         // implements the interface
+   ```
+
+   **Why this matters:** Drawing `orchestrator → discord:sendMessage` directly hides the architectural intent — it looks like tight coupling when the code is actually decoupled via an interface. By routing through the Types module, the diagram accurately shows the dependency inversion.
+
+### Phase 1.5: Dependency-Flow Lane Design
+
+**This phase is critical.** Lane design must be driven by the actual dependency graph, not by package structure or functional categories.
+
+#### Step 1: Build the dependency graph
+
+Before designing lanes, trace the real import/call relationships between modules. For each module, list what it calls and what calls it. The goal is to understand the **direction of flow**: which modules are upstream (closer to user input) and which are downstream (closer to external services or storage).
+
+#### Step 2: Identify the flow axis
+
+Most systems have a dominant flow direction. Examples:
+- **Request-response**: Client → Gateway → Service → Storage → External
+- **Event-driven**: Producer → Broker → Consumer → Sink
+- **Pipeline**: Ingestion → Transform → Enrich → Output
+
+Arrange lanes left-to-right (or top-to-bottom) along this flow axis. The leftmost lane should contain entry points (where data enters the system), and the rightmost should contain terminal dependencies (databases, external APIs, output).
+
+#### Step 3: Place modules by dependency position, not package
+
+A module belongs in the lane that matches its position in the call chain:
+- **Wrong**: Group by package (`core/`, `server/`, `lib/`) — packages are code organization, not architecture
+- **Wrong**: Group by category ("Infrastructure", "Utilities") — too abstract, loses flow information
+- **Right**: Group by call-chain position — modules that sit at the same depth in the dependency graph share a lane
+
+Ask for each module: "When a request flows through the system, at what stage does this module get called?" Modules called at the same stage belong together.
+
+#### Step 4: Optimize for short connections
+
+The #1 layout goal: **most edges should connect adjacent lanes**. If your design has many edges skipping 2+ lanes, your lane assignment is wrong. Rebalance:
+- Merge distant lanes that share heavy traffic
+- Move a module to the lane where most of its connections point
+- Tightly-coupled modules (mutual calls, shared state) must be in the same lane or adjacent lanes — use `layout[]` horizontal pairing for co-located pairs
+
+#### Step 5: Size lanes by content density
+
+Set `flex` values proportional to module count and function count in each lane. A lane with 5 modules and 30 functions needs more space than a lane with 1 module and 3 functions. Avoid large empty areas.
+
+#### Anti-patterns to avoid
+
+| Anti-pattern | Why it fails | Fix |
+|---|---|---|
+| One lane per package | Packages ≠ architecture layers | Regroup by call-chain depth |
+| "Infrastructure" catch-all lane | Store, Config, Logger have different callers | Split by who calls them |
+| Singleton lane for 1 small module | Wastes space, creates long crossing lines | Merge into the lane of its primary caller |
+| Entry points spread across lanes | Hard to see where flows start | Consolidate entries in leftmost lane |
+
+### Phase 2: Color Assignment
+
+Use this palette based on module role:
+
+| Role | Color | Var |
+|------|-------|-----|
+| Primary platform / client | `#5865F2` | blue |
+| Secondary platform / client | `#2D60F5` | lark-blue |
+| Core / routing / processing | `#4cc9f0` | cyan |
+| External service / agent | `#fb923c` | orange |
+| Storage / infrastructure | `#71717a` | store |
+| API layer | `#a78bfa` | purple |
+| CLI / entry point | `#34d399` | green |
+
+Assign each module a color from this palette. Related modules should share colors. Unique/important modules get distinct colors.
+
+### Phase 3: Generate HTML
+
+Produce a single self-contained HTML file using the exact template structure below. Replace only the DATA section (MODULES, LANES, MODULE_FUNCTIONS, CHAINS) and the project title/legend. **Do not modify the CSS, rendering logic, or interaction code.**
+
+## Output Template
+
+Write the complete HTML file to `archshow/interactive.html` (or the path specified by the user).
+
+The file structure must be:
+
+```
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  [meta + font link + CSS — copy exactly from template]
+</head>
+<body>
+  [controls bar — update project name only]
+  [legend — update module list to match your modules]
+  [main swim area — no changes]
+  [entry bar — no changes]
+  <script>
+    // ═══ DATA ═══
+    const MODULES = [ /* your analyzed modules */ ];
+    const LANES = [ /* your swim lanes */ ];
+    const MODULE_FUNCTIONS = { /* your functions per module */ };
+    const CHAINS = { /* your dependency chains */ };
+
+    // ═══ ENGINE (copy exactly — do not modify) ═══
+    [all rendering, interaction, animation code]
+  </script>
+</body>
+</html>
+```
+
+## Complete HTML Template
+
+Below is the full template. The DATA section contains placeholder comments — replace those with your analysis results. Everything else must be copied verbatim.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>cc2im — Architecture Diagram</title>
+<title>PROJECT_NAME — Architecture Diagram</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -154,7 +324,6 @@ body {
   align-items: stretch;
   transition: opacity 0.4s;
 }
-/* Clients lane: allow inner horizontal pairing */
 .lane .module-pair {
   display: flex;
   gap: 8px;
@@ -219,7 +388,6 @@ body {
   text-overflow: ellipsis;
   line-height: 1.3;
 }
-/* Extra gap for pills that have same-module connections */
 .fn-pill.has-vertical-conn {
   margin-bottom: 14px;
 }
@@ -250,7 +418,6 @@ body {
   margin-right: 3px;
   vertical-align: middle;
 }
-/* Info button on pill */
 .fn-info-btn {
   position: absolute;
   right: 2px;
@@ -353,7 +520,6 @@ body {
 .conn-path.implements { stroke: #a78bfa; stroke-dasharray: 6 3; }
 .conn-path.active { opacity: 0.6; stroke-width: 1.5; }
 .conn-path.dimmed { opacity: 0.02; }
-/* Function call type badges */
 .fn-badge {
   display: inline-block;
   font-size: 7px;
@@ -369,7 +535,6 @@ body {
 .fn-badge.badge-catch { background: #f8717130; color: #f87171; }
 .fn-badge.badge-cb { background: #a78bfa30; color: #a78bfa; }
 .fn-badge.badge-orch { background: #34d39930; color: #34d399; }
-/* Invisible wider hit area for dragging paths */
 .conn-hit {
   fill: none;
   stroke: transparent;
@@ -421,9 +586,9 @@ body {
 </head>
 <body>
 
-<!-- Controls -->
+<!-- Controls — UPDATE: project name in h1 -->
 <div id="controls">
-  <h1><span>cc2im</span> Architecture</h1>
+  <h1><span>PROJECT_NAME</span> Architecture</h1>
   <div class="ctrl-sep"></div>
   <span id="chain-name"></span>
   <button class="ctrl-btn" onclick="resetChain()">Reset</button>
@@ -437,29 +602,24 @@ body {
   <button class="ctrl-btn" id="legend-btn" onclick="toggleLegend()">Legend</button>
 </div>
 
-<!-- Legend -->
+<!-- Legend — UPDATE: module colors/names to match your modules -->
 <div id="legend-overlay">
   <h3>Modules</h3>
-  <div class="legend-item"><div class="legend-dot" style="background:#5865F2"></div><span class="legend-label">Discord</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#2D60F5"></div><span class="legend-label">Lark</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#4cc9f0"></div><span class="legend-label">Web / Core</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div><span class="legend-label">Claude</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#71717a"></div><span class="legend-label">Store / Config</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div><span class="legend-label">API</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div><span class="legend-label">CLI</span></div>
+  <!-- Add one legend-item per unique module color group -->
+  <!-- Example: <div class="legend-item"><div class="legend-dot" style="background:#5865F2"></div><span class="legend-label">Module Name</span></div> -->
   <h3>Flow</h3>
   <div class="legend-item"><div class="legend-line" style="background:#fbbf24"></div><span class="legend-label">Dependency (calls)</span></div>
   <div class="legend-item"><div class="legend-line" style="background:#a78bfa; background-image:repeating-linear-gradient(90deg, #a78bfa 0 6px, transparent 6px 9px); background-color:transparent;"></div><span class="legend-label">Implements (registration)</span></div>
   <h3>Badges</h3>
   <div class="legend-item"><span class="fn-badge badge-orch" style="margin:0">orch</span><span class="legend-label">Orchestrator — coordinates multiple steps</span></div>
-  <div class="legend-item"><span class="fn-badge badge-cb" style="margin:0">cb</span><span class="legend-label">Callback — invoked asynchronously by caller</span></div>
-  <div class="legend-item"><span class="fn-badge badge-catch" style="margin:0">catch</span><span class="legend-label">Catch — error / exception handler</span></div>
-  <div class="legend-item"><span class="fn-badge badge-timer" style="margin:0">timer</span><span class="legend-label">Timer — periodic / scheduled execution</span></div>
+  <div class="legend-item"><span class="fn-badge badge-cb" style="margin:0">cb</span><span class="legend-label">Callback — invoked asynchronously</span></div>
+  <div class="legend-item"><span class="fn-badge badge-catch" style="margin:0">catch</span><span class="legend-label">Catch — error handler</span></div>
+  <div class="legend-item"><span class="fn-badge badge-timer" style="margin:0">timer</span><span class="legend-label">Timer — scheduled execution</span></div>
   <h3>Entry Points</h3>
   <div class="legend-item"><div class="legend-entry-sample"></div><span class="legend-label">Clickable entry</span></div>
 </div>
 
-<!-- Main swim area -->
+<!-- Main swim area — DO NOT MODIFY -->
 <div id="main">
   <div id="swim-container">
     <div id="swim-header"></div>
@@ -485,329 +645,42 @@ body {
   </div>
 </div>
 
-<!-- Entry bar -->
+<!-- Entry bar — DO NOT MODIFY -->
 <div id="entry-bar">
   <span class="bar-label">Entry Points</span>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// DATA
+// DATA — REPLACE THIS SECTION WITH YOUR ANALYSIS
 // ═══════════════════════════════════════════════════════════════════
 
 const MODULES = [
-  { id: 'discord', name: 'Discord', color: '#5865F2', path: 'cli/src/adapters/discord.ts' },
-  { id: 'lark', name: 'Lark', color: '#2D60F5', path: 'cli/src/adapters/lark.ts' },
-  { id: 'webui', name: 'Web UI', color: '#4cc9f0', path: 'ui/src/' },
-  { id: 'webadapter', name: 'WebAdapter', color: '#4cc9f0', path: 'cli/src/adapters/web.ts' },
-  { id: 'router', name: 'Router', color: '#4cc9f0', path: 'core/src/router.ts' },
-  { id: 'session', name: 'SessionMgr', color: '#4cc9f0', path: 'core/src/session.ts' },
-  { id: 'claude', name: 'Claude', color: '#fb923c', path: 'Claude Code stdout' },
-  { id: 'formatter', name: 'Formatter', color: '#4cc9f0', path: 'core/src/formatter.ts' },
-  { id: 'store', name: 'Store', color: '#71717a', path: 'core/src/store.ts' },
-  { id: 'config', name: 'Config', color: '#71717a', path: 'core/src/config.ts' },
-  { id: 'api', name: 'API', color: '#a78bfa', path: 'server/src/api.ts' },
-  { id: 'cli', name: 'CLI', color: '#34d399', path: 'cli/src/index.ts' },
-  { id: 'types', name: 'Types', color: '#71717a', path: 'core/src/types.ts' },
+  // { id: 'mymod', name: 'MyModule', color: '#4cc9f0', path: 'src/mymod.ts' },
 ];
 
 const LANES = [
-  {
-    id: 'clients',
-    name: 'Clients',
-    color: '#5865F2',
-    layout: ['discord', 'lark', ['webui', 'webadapter']],
-    modules: ['discord', 'lark', 'webui', 'webadapter'],
-    flex: 4,
-  },
-  {
-    id: 'routing',
-    name: 'Server',
-    color: '#4cc9f0',
-    modules: ['cli', 'api'],
-    flex: 2,
-  },
-  {
-    id: 'processing',
-    name: 'Core',
-    color: '#4cc9f0',
-    modules: ['router', 'session', 'formatter', 'store', 'config', 'types'],
-    flex: 3,
-  },
-  {
-    id: 'claude',
-    name: 'Agent',
-    color: '#fb923c',
-    modules: ['claude'],
-    flex: 1,
-  },
+  // { id: 'layer1', name: 'Layer 1', color: '#5865F2', modules: ['mod1', 'mod2'], flex: 3 },
 ];
 
 const MODULE_FUNCTIONS = {
-  discord: [
-    { id: 'discord:onMessage', fn: 'onMessage()', entry: true, desc: 'Register incoming message callback. Constructs IncomingMessage with normalized fields (platform, channelId, threadId, content, attachments).', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:onReaction', fn: 'onReaction()', desc: 'Register reaction callback for thread management (/im-done, /im-reopen).', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:setupProject', fn: 'setupProject()', desc: 'Create or find cc2im-{project} text channel in Discord guild, register route.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:createThread', fn: 'createThread()', desc: 'Start a Discord thread from the first user message in a channel.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:sendMessage', fn: 'sendMessage()', desc: 'Post message to channel/thread. Used for additional chunks [2/N]... when text is split.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:editMessage', fn: 'editMessage()', desc: 'Update existing message content. Used for streaming live updates (every 3s) and final response.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:uploadFile', fn: 'uploadFile()', desc: 'Attach image files or full-output.md when response exceeds 5x platform limit.', file: 'cli/src/adapters/discord.ts' },
-    { id: 'discord:addReaction', fn: 'addReaction()', desc: 'Add emoji reactions extracted via [react:emoji] pattern from Claude response.', file: 'cli/src/adapters/discord.ts' },
-  ],
-  lark: [
-    { id: 'lark:onMessage', fn: 'onMessage()', entry: true, desc: 'Register Lark WebSocket event callback. Constructs IncomingMessage from Lark event payload.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:setupProject', fn: 'setupProject()', desc: 'Create group chat per project via Lark API, register route.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:sendMessage', fn: 'sendMessage()', desc: 'Post message via Lark API. Used for additional chunks when text split.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:editMessage', fn: 'editMessage()', desc: 'Update message content via Lark API. Live update every 3s during streaming.', file: 'cli/src/adapters/lark.ts' },
-    { id: 'lark:uploadFile', fn: 'uploadFile()', desc: 'Upload files via Lark file API for image attachments.', file: 'cli/src/adapters/lark.ts' },
-  ],
-  webui: [
-    { id: 'webui:chat.send', fn: 'chat.send', entry: true, desc: 'WebSocket message from browser. Fields: project, message, threadKey?, sessionId?, model?. Auto-subscribes sender.', file: 'ui/src/lib/stores/chat.ts' },
-    { id: 'webui:chat.subscribe', fn: 'chat.subscribe', entry: true, desc: 'Subscribe to thread events. If stream active, server sends chat.recover with full buffered content.', file: 'ui/src/lib/stores/connection.ts' },
-    { id: 'webui:chat.abort', fn: 'chat.abort', entry: true, desc: 'Abort active Claude process for thread. Sends SIGTERM via SessionManager.', file: 'ui/src/lib/stores/chat.ts' },
-    { id: 'webui:fetch', fn: 'fetch(/api/*)', entry: true, desc: 'HTTP request from browser to REST API endpoints. Config, projects, sessions, stats.', file: 'ui/src/routes/' },
-  ],
-  webadapter: [
-    { id: 'webadapter:messageHandler', fn: 'messageHandler()', desc: 'Parse incoming WS message, auto-subscribe sender to thread, dispatch to handleMessage().', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:onAbort', fn: 'onAbort()', desc: 'Register abort callback → sessionManager.abort(threadKey). Triggered by chat.abort.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendMessage', fn: 'sendMessage()', desc: 'Send chat.message to thread subscribers. Initial "⏳ Thinking..." or additional chunks.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:editMessage', fn: 'editMessage()', desc: 'Send chat.update to thread subscribers. Replaces content with latest buffered text + status.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendDone', fn: 'sendDone()', desc: 'Broadcast chat.done with token stats. Clears stream buffer for thread.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendSessionUpdate', fn: 'sendSessionUpdate()', desc: 'Broadcast session.update to ALL clients for sidebar refresh (new/renamed session).', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendError', fn: 'sendError()', badge: 'catch', desc: 'Broadcast chat.error + clear stream buffer. Called via catch handler on process failure or abort.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:subscriptions', fn: 'subscriptions.add()', desc: 'Map<threadId, Set<WS>>. Add WS client to per-thread subscriber set.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:streamBuffers', fn: 'streamBuffers.get()', desc: 'Map<threadId, string>. Get current stream content for recovery on subscribe.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:sendToThread', fn: 'sendToThread()', desc: 'Send to thread subscribers only, fallback to broadcast if no subscribers.', file: 'cli/src/adapters/web.ts' },
-    { id: 'webadapter:httpHandler', fn: 'HTTP handler', badge: 'cb', desc: 'Route HTTP requests via Node http.createServer callback: /api/* → handleApi(), other paths → serveStatic(). 1MB body limit.', file: 'cli/src/adapters/web.ts' },
-  ],
-  router: [
-    { id: 'router:getProject', fn: 'getProject()', desc: 'Map {platform}:{channelId} → ProjectConfig. Returns null if channel not registered.', file: 'core/src/router.ts' },
-    { id: 'router:isCmd', fn: 'isManagementCmd()', desc: 'Check if content matches /im-* pattern. Pure boolean check, no side effects.', file: 'core/src/router.ts' },
-    { id: 'router:parseCmd', fn: 'parseManagementCmd()', desc: 'Parse /im-* content into { command, args }. Pure function, no side effects.', file: 'core/src/router.ts' },
-    { id: 'router:setupProject', fn: 'setupProject()', desc: 'Register channel mapping: {platform}:{channelId} → project name. Called at startup.', file: 'core/src/router.ts' },
-  ],
-  session: [
-    { id: 'session:invoke', fn: 'invoke()', desc: 'Queue message if thread busy, wait for concurrency slot (max 5), then spawn Claude process. Per-thread FIFO queue.', file: 'core/src/session.ts' },
-    { id: 'session:spawn', fn: 'spawn()', desc: 'Start: claude --print --output-format stream-json --model {model} --resume {sessionId} -p {message}. cwd=projectDir.', file: 'core/src/session.ts' },
-    { id: 'session:onEvent', fn: 'onEvent()', badge: 'cb', desc: 'Stream callback invoked by readline handler for each NDJSON line from stdout. Accumulate buffered text, track tool activities.', file: 'core/src/session.ts' },
-    { id: 'session:abort', fn: 'abort()', desc: 'Send SIGTERM to active Claude child process for given threadKey.', file: 'core/src/session.ts' },
-    { id: 'session:abortAll', fn: 'abortAll()', desc: 'SIGTERM all running Claude processes. Called during graceful shutdown.', file: 'core/src/session.ts' },
-  ],
-  claude: [
-    { id: 'claude:StreamInit', fn: 'StreamInit', badge: 'cb', desc: 'type: "system", subtype: "init". Read via readline callback on stdout. Captures session_id for --resume on next message.', file: 'Claude Code stdout' },
-    { id: 'claude:StreamAssistant', fn: 'StreamAssistant', badge: 'cb', desc: 'type: "assistant". Read via readline callback on stdout. Content array: text blocks + tool_use blocks. Emitted multiple times during response.', file: 'Claude Code stdout' },
-    { id: 'claude:StreamResult', fn: 'StreamResult', badge: 'cb', desc: 'type: "result", subtype: "success"|"error". Read via readline callback on stdout. Final text + usage (input_tokens, output_tokens, cache_read, cache_creation).', file: 'Claude Code stdout' },
-    { id: 'claude:AskUser', fn: 'AskUserQuestion', desc: 'Tool interception: detect tool_use name="AskUserQuestion", store questions, send to user, await reply, re-invoke with --resume.', file: 'cli/src/index.ts' },
-  ],
-  formatter: [
-    { id: 'formatter:extractReactions', fn: 'extractReactions()', desc: 'Strip [react:emoji] patterns from end of text. Returns {cleanText, reactions: string[]}.', file: 'core/src/formatter.ts' },
-    { id: 'formatter:formatOutput', fn: 'formatOutput()', desc: '≤maxLen → single msg. ≤maxLen×5 → splitText() with [i/N] prefix. >maxLen×5 → generateSummary() + full-output.md.', file: 'core/src/formatter.ts' },
-    { id: 'formatter:extractImages', fn: 'extractImages()', desc: 'Match image file paths (png/jpg/gif/svg) in response text → Attachment[] for upload.', file: 'core/src/formatter.ts' },
-  ],
-  store: [
-    { id: 'store:upsertThread', fn: 'upsertThread()', desc: 'INSERT ... ON CONFLICT DO UPDATE SET session_id, name. Creates or updates thread record.', file: 'core/src/store.ts' },
-    { id: 'store:saveMessage', fn: 'saveMessage()', desc: 'INSERT OR REPLACE with content_summary, token counts (input, output, cache_read, cache_creation), model.', file: 'core/src/store.ts' },
-    { id: 'store:getThread', fn: 'getThread()', desc: 'SELECT * WHERE thread_id=? AND platform=?. Returns thread record or null.', file: 'core/src/store.ts' },
-    { id: 'store:getSessionTokens', fn: 'getSessionTokens()', desc: 'SUM(tokens) WHERE thread_id=? AND is_bot=1. Cumulative token usage for a session.', file: 'core/src/store.ts' },
-    { id: 'store:listSessions', fn: 'listSessions()', desc: 'List threads with optional project filter. Excludes archived by default.', file: 'core/src/store.ts' },
-    { id: 'store:getDailyTokens', fn: 'getDailyTokens()', desc: 'GROUP BY DATE(created_at), model. Daily token breakdown for stats dashboard.', file: 'core/src/store.ts' },
-    { id: 'store:updateStatus', fn: 'updateThreadStatus()', desc: 'UPDATE SET status=? (active/done/archived). Used by /im-done and /im-reopen.', file: 'core/src/store.ts' },
-    { id: 'store:markPending', fn: 'markPendingRestart()', desc: 'INSERT OR IGNORE into pending_restarts. Marks active threads for recovery on next startup.', file: 'core/src/store.ts' },
-    { id: 'store:getPending', fn: 'getPendingRestarts()', desc: 'JOIN threads on pending_restarts. Returns threads that need session recovery.', file: 'core/src/store.ts' },
-    { id: 'store:close', fn: 'close()', desc: 'Close SQLite connection. Called during graceful shutdown.', file: 'core/src/store.ts' },
-  ],
-  config: [
-    { id: 'config:load', fn: 'loadConfig()', desc: 'Search: CC2IM_CONFIG env → --config flag → ~/.config/cc2im/config.yaml → ./config.yaml. Apply env var overrides.', file: 'core/src/config.ts' },
-    { id: 'config:save', fn: 'saveConfig()', desc: 'Write config to YAML. Secrets from env vars saved as empty string to avoid leaking.', file: 'core/src/config.ts' },
-  ],
-  api: [
-    { id: 'api:handleApi', fn: 'handleApi()', desc: '12 endpoints: GET/PUT /api/config, CRUD /api/projects, GET /api/sessions, GET /api/stats/tokens, POST /api/claude/test. Secret masking on GET.', file: 'server/src/api.ts' },
-  ],
-  cli: [
-    { id: 'cli:main', fn: 'main()', entry: true, desc: 'Entry point: loadConfig → Store → SessionManager → Formatter → Router → init adapters → setupProject → onMessage → recoverPending → signal handlers.', file: 'cli/src/index.ts' },
-    { id: 'cli:handleMessage', fn: 'handleMessage()', badge: 'orch', desc: 'Core orchestrator: route → persist → invoke → format → deliver. Coordinates all steps of message processing sequentially.', file: 'cli/src/index.ts' },
-    { id: 'cli:shutdown', fn: 'gracefulShutdown()', entry: true, desc: 'SIGINT/SIGTERM: markPendingRestart for active threads → abortAll → adapter.stop() → store.close() → exit(0).', file: 'cli/src/index.ts' },
-    { id: 'cli:recover', fn: 'recoverPending()', entry: true, desc: 'On startup: load pending → clear table → invoke() with --resume for each. Retry once after 3s on failure.', file: 'cli/src/index.ts' },
-    { id: 'cli:handleMgmtCmd', fn: 'handleManagementCmd()', entry: true, desc: 'Check isManagementCommand → parseManagementCommand → dispatch to executeCommand. Early return in handleMessage.', file: 'cli/src/index.ts' },
-    { id: 'cli:executeCmd', fn: 'executeCommand()', desc: 'Dispatch management commands: add/remove project, reload config, mark done/reopen, init owner.', file: 'cli/src/index.ts' },
-  ],
-  types: [
-    { id: 'types:PlatformAdapter', fn: 'PlatformAdapter', entry: true, desc: 'Interface: start/stop, setupProject, createThread, sendMessage, editMessage, uploadFile, addReaction, onMessage, onReaction.', file: 'core/src/types.ts' },
-    { id: 'types:IncomingMessage', fn: 'IncomingMessage', desc: 'Interface: platform, channelId, threadId, messageId, userId, userName, content, attachments.', file: 'core/src/types.ts' },
-    { id: 'types:Reaction', fn: 'Reaction', desc: 'Interface: platform, channelId, threadId, messageId, emoji, userId. Normalized reaction event.', file: 'core/src/types.ts' },
-    { id: 'types:StreamCallback', fn: 'StreamCallback', desc: 'Type: (event: StreamEvent) => void. Callback abstraction for stream event processing.', file: 'core/src/session.ts' },
-    { id: 'types:StreamEvent', fn: 'StreamEvent', desc: 'Union type: StreamInitEvent | StreamAssistantEvent | StreamResultEvent. Claude Code NDJSON protocol.', file: 'core/src/types.ts' },
-    { id: 'types:AppConfig', fn: 'AppConfig', desc: 'Interface: lark, discord, projects[], claude, formatter. Top-level configuration shape.', file: 'core/src/types.ts' },
-    { id: 'types:ProjectConfig', fn: 'ProjectConfig', desc: 'Interface: name, directory, model?, platforms. Per-project settings.', file: 'core/src/types.ts' },
-  ],
+  // mymod: [
+  //   { id: 'mymod:init', fn: 'init()', entry: true, desc: 'Initialize module.', file: 'src/mymod.ts' },
+  //   { id: 'mymod:process', fn: 'process()', badge: 'orch', desc: 'Process data.', file: 'src/mymod.ts' },
+  // ],
 };
 
 const CHAINS = {
-  'discord:onMessage': {
-    name: 'Discord Message',
-    edges: [
-      // entry → handleMessage
-      { from: 'discord:onMessage', to: 'cli:handleMessage', type: 'dependency' },
-      // handleMessage calls each step directly
-      { from: 'cli:handleMessage', to: 'router:getProject', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'session:invoke', type: 'dependency' },
-      // invoke internally calls spawn
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      // spawn starts claude process, readline reads stdout events via callback
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'dependency' },
-      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'dependency' },
-      // readline callback calls onEvent for each event
-
-      // after invoke resolves, handleMessage calls formatter + adapter
-      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-    ]
-  },
-  'lark:onMessage': {
-    name: 'Lark Message',
-    edges: [
-      { from: 'lark:onMessage', to: 'cli:handleMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'router:getProject', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'session:invoke', type: 'dependency' },
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'dependency' },
-      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'dependency' },
-
-      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-    ]
-  },
-  'webui:chat.send': {
-    name: 'Web Message',
-    edges: [
-      { from: 'webui:chat.send', to: 'webadapter:messageHandler', type: 'dependency' },
-      { from: 'webadapter:messageHandler', to: 'cli:handleMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'router:getProject', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'session:invoke', type: 'dependency' },
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-      { from: 'claude:StreamInit', to: 'claude:StreamAssistant', type: 'dependency' },
-      { from: 'claude:StreamAssistant', to: 'claude:StreamResult', type: 'dependency' },
-
-      { from: 'cli:handleMessage', to: 'formatter:extractReactions', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:formatOutput', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'formatter:extractImages', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:handleMessage', to: 'store:saveMessage', type: 'dependency' },
-      // 外层 wrapper 调用（handleMessage 之后）
-      { from: 'webadapter:messageHandler', to: 'webadapter:sendDone', type: 'dependency' },
-    ]
-  },
-  'webui:chat.subscribe': {
-    name: 'Web Subscribe',
-    edges: [
-      { from: 'webui:chat.subscribe', to: 'webadapter:subscriptions', type: 'dependency' },
-      { from: 'webadapter:subscriptions', to: 'webadapter:streamBuffers', type: 'dependency' },
-      { from: 'webadapter:streamBuffers', to: 'webadapter:sendToThread', type: 'dependency' },
-    ]
-  },
-  'webui:chat.abort': {
-    name: 'Web Abort',
-    edges: [
-      { from: 'webui:chat.abort', to: 'webadapter:onAbort', type: 'dependency' },
-      { from: 'webadapter:onAbort', to: 'session:abort', type: 'dependency' },
-
-    ]
-  },
-  'webui:fetch': {
-    name: 'REST API',
-    edges: [
-      { from: 'webui:fetch', to: 'webadapter:httpHandler', type: 'dependency' },
-      { from: 'webadapter:httpHandler', to: 'api:handleApi', type: 'dependency' },
-      { from: 'api:handleApi', to: 'store:listSessions', type: 'dependency' },
-      { from: 'api:handleApi', to: 'store:getDailyTokens', type: 'dependency' },
-      { from: 'api:handleApi', to: 'config:load', type: 'dependency' },
-      { from: 'api:handleApi', to: 'config:save', type: 'dependency' },
-    ]
-  },
-  'cli:main': {
-    name: 'CLI Startup',
-    edges: [
-      { from: 'cli:main', to: 'config:load', type: 'dependency' },
-      { from: 'cli:main', to: 'types:PlatformAdapter', type: 'dependency' },
-      { from: 'cli:main', to: 'store:upsertThread', type: 'dependency' },
-      { from: 'cli:main', to: 'router:setupProject', type: 'dependency' },
-      { from: 'cli:main', to: 'cli:recover', type: 'dependency' },
-    ]
-  },
-  'cli:shutdown': {
-    name: 'Graceful Shutdown',
-    edges: [
-      { from: 'cli:shutdown', to: 'store:markPending', type: 'dependency' },
-      { from: 'cli:shutdown', to: 'session:abortAll', type: 'dependency' },
-      { from: 'cli:shutdown', to: 'store:close', type: 'dependency' },
-    ]
-  },
-  'cli:recover': {
-    name: 'Pending Recovery',
-    edges: [
-      { from: 'cli:recover', to: 'store:getPending', type: 'dependency' },
-      { from: 'cli:recover', to: 'session:invoke', type: 'dependency' },
-      { from: 'session:invoke', to: 'session:spawn', type: 'dependency' },
-      { from: 'session:spawn', to: 'claude:StreamInit', type: 'dependency' },
-
-      { from: 'cli:recover', to: 'types:PlatformAdapter', type: 'dependency' },
-    ]
-  },
-  'cli:handleMgmtCmd': {
-    name: 'Management Command (/im-*)',
-    edges: [
-      { from: 'cli:handleMessage', to: 'cli:handleMgmtCmd', type: 'dependency' },
-      { from: 'cli:handleMgmtCmd', to: 'router:isCmd', type: 'dependency' },
-      { from: 'cli:handleMgmtCmd', to: 'router:parseCmd', type: 'dependency' },
-      { from: 'cli:handleMgmtCmd', to: 'cli:executeCmd', type: 'dependency' },
-      { from: 'cli:executeCmd', to: 'config:save', type: 'dependency' },
-      { from: 'cli:executeCmd', to: 'store:updateStatus', type: 'dependency' },
-      { from: 'cli:executeCmd', to: 'types:PlatformAdapter', type: 'dependency' },
-    ]
-  },
-  'types:PlatformAdapter': {
-    name: 'Adapter → Interface',
-    edges: [
-      // PlatformAdapter: 适配器实现接口
-      { from: 'discord:onMessage', to: 'types:PlatformAdapter', type: 'implements' },
-      { from: 'lark:onMessage', to: 'types:PlatformAdapter', type: 'implements' },
-      { from: 'webadapter:messageHandler', to: 'types:PlatformAdapter', type: 'implements' },
-      // IncomingMessage: 适配器生产 DTO，CLI 消费
-      { from: 'discord:onMessage', to: 'types:IncomingMessage', type: 'implements' },
-      { from: 'lark:onMessage', to: 'types:IncomingMessage', type: 'implements' },
-      { from: 'webadapter:messageHandler', to: 'types:IncomingMessage', type: 'implements' },
-      { from: 'cli:handleMessage', to: 'types:IncomingMessage', type: 'dependency' },
-      // StreamCallback: CLI 提供回调，SessionManager 消费
-      { from: 'cli:handleMessage', to: 'types:StreamCallback', type: 'implements' },
-      { from: 'session:invoke', to: 'types:StreamCallback', type: 'dependency' },
-      // StreamEvent: Claude 产生，SessionManager 通过回调传递
-      { from: 'session:onEvent', to: 'types:StreamEvent', type: 'dependency' },
-      // AppConfig: 各模块依赖配置接口
-      { from: 'session:invoke', to: 'types:AppConfig', type: 'dependency' },
-      { from: 'formatter:formatOutput', to: 'types:AppConfig', type: 'dependency' },
-      { from: 'router:getProject', to: 'types:AppConfig', type: 'dependency' },
-    ]
-  },
+  // 'mymod:init': {
+  //   name: 'Initialization',
+  //   edges: [
+  //     { from: 'mymod:init', to: 'othermod:setup', type: 'dependency' },
+  //   ]
+  // },
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// STATE
+// ENGINE — DO NOT MODIFY BELOW THIS LINE
 // ═══════════════════════════════════════════════════════════════════
 
 let activeChain = null;
@@ -815,19 +688,14 @@ let animating = false;
 let animSpeed = 1;
 let animFrame = null;
 let glowDots = [];
-const pillEls = {};     // fnId -> DOM element
-const pathEls = {};     // "from|to" -> SVG path element
+const pillEls = {};
+const pathEls = {};
 let svgEl, lanesEl, containerEl;
 
-// Build a lookup: moduleId -> laneIndex for connection routing
 const moduleLaneIndex = {};
 LANES.forEach((lane, i) => {
   lane.modules.forEach(modId => { moduleLaneIndex[modId] = i; });
 });
-
-// ═══════════════════════════════════════════════════════════════════
-// BUILD DOM
-// ═══════════════════════════════════════════════════════════════════
 
 function buildHeader() {
   const header = document.getElementById('swim-header');
@@ -841,7 +709,6 @@ function buildHeader() {
   });
 }
 
-// Popover state
 let openPopover = null;
 
 function closePopover() {
@@ -862,7 +729,6 @@ function showPopover(fnData, modData, anchorEl) {
     <div class="pop-desc">${fnData.desc || ''}</div>
     ${fnData.file ? `<div class="pop-file">${fnData.file}</div>` : ''}`;
 
-  // Position relative to anchor pill
   const rect = anchorEl.getBoundingClientRect();
   const mainRect = document.getElementById('main').getBoundingClientRect();
   pop.style.left = (rect.right - mainRect.left + 8) + 'px';
@@ -871,7 +737,6 @@ function showPopover(fnData, modData, anchorEl) {
   document.getElementById('swim-container').appendChild(pop);
   openPopover = pop;
 
-  // Reposition if off-screen
   requestAnimationFrame(() => {
     const popRect = pop.getBoundingClientRect();
     if (popRect.right > window.innerWidth - 10) {
@@ -897,7 +762,7 @@ function buildModuleGroup(modId) {
     const pill = document.createElement('div');
     pill.className = 'fn-pill';
     pill.dataset.fn = f.id;
-    pill.style.paddingRight = '20px'; // room for info btn
+    pill.style.paddingRight = '20px';
 
     if (f.entry) {
       pill.dataset.entry = 'true';
@@ -910,7 +775,6 @@ function buildModuleGroup(modId) {
       pill.textContent = f.fn;
     }
 
-    // Badge for call type
     if (f.badge) {
       const badgeEl = document.createElement('span');
       badgeEl.className = `fn-badge badge-${f.badge}`;
@@ -918,7 +782,6 @@ function buildModuleGroup(modId) {
       pill.appendChild(badgeEl);
     }
 
-    // Info button
     const btn = document.createElement('span');
     btn.className = 'fn-info-btn';
     btn.textContent = 'i';
@@ -946,7 +809,6 @@ function buildLanes() {
     const items = lane.layout || lane.modules.map(m => m);
     items.forEach(item => {
       if (Array.isArray(item)) {
-        // Horizontal pair
         const pair = document.createElement('div');
         pair.className = 'module-pair';
         item.forEach(modId => pair.appendChild(buildModuleGroup(modId)));
@@ -962,7 +824,6 @@ function buildLanes() {
 
 function buildEntryBar() {
   const bar = document.getElementById('entry-bar');
-  // Collect all entry functions
   const entries = [];
   for (const [modId, fns] of Object.entries(MODULE_FUNCTIONS)) {
     fns.filter(f => f.entry).forEach(f => {
@@ -980,10 +841,6 @@ function buildEntryBar() {
     bar.appendChild(chip);
   });
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// SVG CONNECTIONS
-// ═══════════════════════════════════════════════════════════════════
 
 function getLaneIndex(fnId) {
   const modId = fnId.split(':')[0];
@@ -1007,7 +864,6 @@ function pillCenter(fnId) {
   };
 }
 
-// Store user-adjusted control point offsets: key -> { cp1: {dx,dy}, cp2: {dx,dy} }
 const pathOffsets = {};
 
 function getDefaultCP(fromId, toId) {
@@ -1048,12 +904,10 @@ function buildPath(fromId, toId) {
 
 function buildAllPaths() {
   svgEl = document.getElementById('svg-overlay');
-  // Clear old paths (keep defs)
   const defs = svgEl.querySelector('defs');
   svgEl.innerHTML = '';
   svgEl.appendChild(defs);
 
-  // Mark pills that are sources of same-module vertical connections for extra spacing
   document.querySelectorAll('.fn-pill.has-vertical-conn').forEach(el => el.classList.remove('has-vertical-conn'));
   const vertConnSources = new Set();
   for (const chain of Object.values(CHAINS)) {
@@ -1067,21 +921,17 @@ function buildAllPaths() {
     if (pillEls[fnId]) pillEls[fnId].classList.add('has-vertical-conn');
   });
 
-  // Size SVG to container (re-measure after spacing changes)
   requestAnimationFrame(() => {
-    const cr2 = containerEl.getBoundingClientRect();
     svgEl.setAttribute('width', containerEl.scrollWidth);
     svgEl.setAttribute('height', containerEl.scrollHeight);
     svgEl.style.width = containerEl.scrollWidth + 'px';
     svgEl.style.height = containerEl.scrollHeight + 'px';
   });
-  const cr = containerEl.getBoundingClientRect();
   svgEl.setAttribute('width', containerEl.scrollWidth);
   svgEl.setAttribute('height', containerEl.scrollHeight);
   svgEl.style.width = containerEl.scrollWidth + 'px';
   svgEl.style.height = containerEl.scrollHeight + 'px';
 
-  // Deduplicate edges across all chains
   const edgeSet = new Map();
   for (const chain of Object.values(CHAINS)) {
     chain.edges.forEach(e => {
@@ -1095,14 +945,12 @@ function buildAllPaths() {
     const d = buildPath(fromId, toId);
     if (!d) continue;
 
-    // Invisible hit area for dragging
     const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     hit.setAttribute('d', d);
     hit.classList.add('conn-hit');
     hit.dataset.key = key;
     svgEl.appendChild(hit);
 
-    // Visible path
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', d);
     path.classList.add('conn-path', info.type);
@@ -1116,7 +964,6 @@ function buildAllPaths() {
     hitEls[key] = hit;
   }
 
-  // Attach drag handlers
   initPathDrag();
 }
 
@@ -1141,7 +988,6 @@ function initPathDrag() {
     const mx = e.clientX - cr.left + containerEl.scrollLeft;
     const my = e.clientY - cr.top + containerEl.scrollTop;
 
-    // Determine which control point is closer to click
     const off = pathOffsets[key] || { cp1: {dx:0,dy:0}, cp2: {dx:0,dy:0} };
     const c1x = cp.cp1x + off.cp1.dx, c1y = cp.cp1y + off.cp1.dy;
     const c2x = cp.cp2x + off.cp2.dx, c2y = cp.cp2y + off.cp2.dy;
@@ -1169,7 +1015,6 @@ function initPathDrag() {
       dy: dragState.origOff.dy + ddy,
     };
 
-    // Rebuild just this path
     const d = buildPath(dragState.fromId, dragState.toId);
     if (pathEls[dragState.key]) pathEls[dragState.key].setAttribute('d', d);
     if (hitEls[dragState.key]) hitEls[dragState.key].setAttribute('d', d);
@@ -1183,10 +1028,6 @@ function initPathDrag() {
     }
   });
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// CHAIN SELECTION & ANIMATION
-// ═══════════════════════════════════════════════════════════════════
 
 function toggleChain(chainId) {
   if (activeChain === chainId) {
@@ -1203,20 +1044,16 @@ function selectChain(chainId) {
   stopAnimation();
   activeChain = chainId;
 
-  // Show chain name
   const nameEl = document.getElementById('chain-name');
   nameEl.textContent = chain.name;
   nameEl.style.display = 'inline';
 
-  // Collect chain function IDs
   const chainFns = new Set();
   chain.edges.forEach(e => { chainFns.add(e.from); chainFns.add(e.to); });
 
-  // Collect chain edge keys
   const chainEdgeKeys = new Set();
   chain.edges.forEach(e => chainEdgeKeys.add(`${e.from}|${e.to}`));
 
-  // Dim/highlight pills
   for (const [fnId, el] of Object.entries(pillEls)) {
     el.classList.remove('highlighted', 'dimmed', 'pulse');
     if (chainFns.has(fnId)) {
@@ -1226,7 +1063,6 @@ function selectChain(chainId) {
     }
   }
 
-  // Dim/highlight lanes — check each lane's modules
   document.querySelectorAll('.lane[data-lane]').forEach(laneEl => {
     const laneId = laneEl.dataset.lane;
     const lane = LANES.find(l => l.id === laneId);
@@ -1237,7 +1073,6 @@ function selectChain(chainId) {
     laneEl.classList.toggle('dimmed', !hasActive);
   });
 
-  // Dim/highlight paths
   for (const [key, path] of Object.entries(pathEls)) {
     path.classList.remove('active', 'dimmed');
     if (chainEdgeKeys.has(key)) {
@@ -1247,12 +1082,10 @@ function selectChain(chainId) {
     }
   }
 
-  // Entry chips
   document.querySelectorAll('.entry-chip').forEach(c => {
     c.classList.toggle('active', c.dataset.chain === chainId);
   });
 
-  // Start animation
   animateChain(chainId);
 }
 
@@ -1273,8 +1106,6 @@ function resetChain() {
   document.querySelectorAll('.entry-chip').forEach(c => c.classList.remove('active'));
 }
 
-// ── Glow dot helpers ──
-
 function createGlowDot(type, parentSvg) {
   const TRAIL_COUNT = 4;
   const dots = [];
@@ -1288,7 +1119,7 @@ function createGlowDot(type, parentSvg) {
     parentSvg.appendChild(c);
     dots.push(c);
   }
-  return dots; // [head, trail1, trail2, ...]
+  return dots;
 }
 
 function removeDots(dots) {
@@ -1301,8 +1132,6 @@ function positionDots(dots, positions) {
     if (p) { d.setAttribute('cx', p.x); d.setAttribute('cy', p.y); }
   });
 }
-
-// ── Animation ──
 
 function animateChain(chainId) {
   const chain = CHAINS[chainId];
@@ -1356,10 +1185,6 @@ function stopAnimation() {
   glowDots = [];
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// CONTROLS
-// ═══════════════════════════════════════════════════════════════════
-
 function setSpeed(s) {
   animSpeed = s;
   document.querySelectorAll('.speed-btn').forEach(b => {
@@ -1374,10 +1199,6 @@ function toggleLegend() {
   document.getElementById('legend-btn').classList.toggle('active', legendOpen);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// KEYBOARD
-// ═══════════════════════════════════════════════════════════════════
-
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (openPopover) closePopover();
@@ -1386,16 +1207,11 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Click outside popover to close
 document.addEventListener('mousedown', e => {
   if (openPopover && !openPopover.contains(e.target) && !e.target.closest('.fn-info-btn')) {
     closePopover();
   }
 });
-
-// ═══════════════════════════════════════════════════════════════════
-// RESIZE HANDLING
-// ═══════════════════════════════════════════════════════════════════
 
 let resizeTimer;
 function handleResize() {
@@ -1403,16 +1219,11 @@ function handleResize() {
   resizeTimer = setTimeout(() => {
     const wasChain = activeChain;
     stopAnimation();
-    // Clear old pathEls
     for (const k of Object.keys(pathEls)) delete pathEls[k];
     buildAllPaths();
     if (wasChain) selectChain(wasChain);
   }, 200);
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════════════════
 
 function init() {
   containerEl = document.getElementById('swim-container');
@@ -1420,7 +1231,6 @@ function init() {
   buildLanes();
   buildEntryBar();
 
-  // Wait for layout to settle, then draw paths
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       buildAllPaths();
@@ -1429,7 +1239,6 @@ function init() {
 
   window.addEventListener('resize', handleResize);
 
-  // Rebuild paths on scroll (for sticky header offset changes)
   let scrollTimer;
   document.getElementById('main').addEventListener('scroll', () => {
     clearTimeout(scrollTimer);
@@ -1447,3 +1256,37 @@ document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
+```
+
+## Quality Checklist
+
+Before outputting the final file, verify:
+
+- [ ] Every module in MODULES appears in exactly one lane's `modules[]` array
+- [ ] Every function id in MODULE_FUNCTIONS uses the format `"moduleId:functionName"`
+- [ ] Every edge references function ids that exist in MODULE_FUNCTIONS
+- [ ] Every `entry: true` function that has a matching CHAINS key appears in the entry bar
+- [ ] Lanes are ordered by dependency flow direction (entry points left, terminal dependencies right)
+- [ ] >80% of edges connect modules in the same lane or adjacent lanes
+- [ ] No lane exists with a single small module that could be merged into a neighbor
+- [ ] At least 8 meaningful chains covering: all entry happy paths, startup, shutdown, error/recovery
+- [ ] A dedicated "Interface Registration" chain exists with `type: 'implements'` edges showing which modules implement which interfaces
+- [ ] Execution chains route through interface types (e.g., `caller → Interface`) instead of calling concrete implementations directly, wherever the code uses dependency inversion
+- [ ] The Types/Interfaces module contains all shared abstractions (interfaces, DTOs, callback types, config types)
+- [ ] Legend module colors match the actual MODULES colors
+- [ ] No duplicate edge keys (`from|to`) within a single chain
+- [ ] The `<title>` and `<h1>` contain the actual project name
+- [ ] Functions have meaningful `desc` values (not just the function signature)
+
+## Tips for High-Quality Output
+
+1. **Read actual source code** — don't guess at function signatures or dependencies. Read imports, constructor params, and call sites.
+2. **Trace real execution flows** — follow actual code paths from entry points through the system. Don't invent connections.
+3. **Identify the dependency direction** — A depends on B means A imports/calls B, not the reverse.
+4. **Look for interface abstractions** — anywhere a module accepts a callback, interface, or abstract type, that's an `implements` relationship worth showing.
+5. **Keep functions focused** — show 3–8 key functions per module, not every method. Focus on public API and important internal functions.
+6. **Name chains after user-visible actions** — "User Login", "Send Message", "API Request", not "Function A calls Function B".
+7. **Lanes follow flow, not folders** — the lane structure should mirror how a request/event travels through the system. If you find yourself naming a lane after a package directory, rethink.
+8. **Maximize adjacent-lane connections** — after assigning lanes, count how many edges cross 2+ lanes. If >20%, reassign modules to reduce crossing distance.
+9. **Cover all major paths** — aim for 8+ chains covering: every entry point's happy path, startup, shutdown, error/recovery, and at least one interface-registration chain. More chains = richer interactive exploration.
+10. **Pair tightly-coupled modules** — use `layout[]` nested arrays to place modules that frequently call each other side-by-side within a lane, reducing visual clutter.
